@@ -13,7 +13,7 @@ export const overviewStats = {
   avgTradesPerDay: 2.1,
   modelVersion: "v6.1-PPO",
   lastTrained: "2026-03-28",
-  status: "running" as const,
+  status: "running" as "running" | "stopped" | "error",
   uptime: "12d 7h 32m",
 };
 
