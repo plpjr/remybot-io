@@ -1,1 +1,1 @@
-@AGENTS.md
+# Kronos Dashboard
