@@ -22,8 +22,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.className} antialiased bg-black text-white`}>
+    <html lang="en">
+      <body className={`${inter.className} antialiased bg-slate-50 text-slate-900`}>
         <Sidebar />
         <main className="lg:ml-64 min-h-screen">
           {children}
