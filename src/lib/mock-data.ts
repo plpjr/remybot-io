@@ -1,26 +1,26 @@
 // Mock data for the dashboard -- will be replaced with Supabase queries
 
 export const overviewStats = {
-  totalReturn: 14.7,
-  totalReturnMonth: 3.2,
-  totalReturnWeek: 0.8,
-  winRate: 82.1,
-  avgPnlBps: 20.27,
-  sharpeRatio: 2.14,
-  maxDrawdown: -3.2,
-  totalTrades: 847,
-  profitFactor: 3.8,
-  avgTradesPerDay: 2.1,
-  modelVersion: "v6.1-PPO",
+  totalReturn: -2.1,
+  totalReturnMonth: -0.4,
+  totalReturnWeek: 0.1,
+  winRate: 40.3,
+  avgPnlBps: -1.8,
+  sharpeRatio: 0.42,
+  maxDrawdown: -8.7,
+  totalTrades: 312,
+  profitFactor: 0.91,
+  avgTradesPerDay: 3.4,
+  modelVersion: "v8-PPO",
   lastTrained: "2026-03-28",
-  status: "running" as "running" | "stopped" | "error",
-  uptime: "12d 7h 32m",
+  status: "stopped" as "running" | "stopped" | "error",
+  uptime: "—",
 };
 
 export const equityCurve = Array.from({ length: 90 }, (_, i) => {
   const base = 10000;
-  const noise = Math.sin(i * 0.3) * 200 + Math.random() * 150;
-  const trend = i * 18;
+  const noise = Math.sin(i * 0.3) * 150 + Math.random() * 100;
+  const trend = -i * 2.5;
   return {
     date: new Date(2026, 0, 1 + i).toISOString().slice(0, 10),
     equity: Math.round(base + trend + noise),
@@ -28,9 +28,9 @@ export const equityCurve = Array.from({ length: 90 }, (_, i) => {
 });
 
 export const monthlyReturns = [
-  { month: "Jan", return: 4.2 },
-  { month: "Feb", return: 3.1 },
-  { month: "Mar", return: 3.2 },
+  { month: "Jan", return: -1.2 },
+  { month: "Feb", return: -0.5 },
+  { month: "Mar", return: -0.4 },
   { month: "Apr", return: 0 },
   { month: "May", return: 0 },
   { month: "Jun", return: 0 },
@@ -43,74 +43,74 @@ export const monthlyReturns = [
 ];
 
 export const longShortBreakdown = {
-  longWinRate: 85.3,
-  shortWinRate: 78.9,
-  longTrades: 512,
-  shortTrades: 335,
-  longAvgPnl: 22.4,
-  shortAvgPnl: 17.1,
+  longWinRate: 42.1,
+  shortWinRate: 38.0,
+  longTrades: 178,
+  shortTrades: 134,
+  longAvgPnl: -1.2,
+  shortAvgPnl: -2.6,
 };
 
 export const weeklyImprovements = [
   {
     week: 13,
     date: "Mar 28, 2026",
-    summary: "Improved exit timing on trend reversals",
+    summary: "V8 campaign: selective-entries + signal inversion fix",
     details: [
-      "Reduced average holding time on losing trades by 18%",
-      "Added volatility-adjusted stop loss logic",
-      "Model now exits 2.3 candles earlier on mean-reversion setups",
+      "Fixed long/short signal inversion bug (actions were swapped)",
+      "Selective-entries variant won 8-candidate sweep (WR 38.7%)",
+      "OOS performance still marginal — PPO policy quality is bottleneck",
     ],
-    metrics: { winRate: "+1.2%", avgPnl: "+0.8 bps", trades: "106 avg" },
+    metrics: { winRate: "40.3%", avgPnl: "-1.8 bps", trades: "3.4/day" },
   },
   {
     week: 12,
     date: "Mar 21, 2026",
-    summary: "Better entry filtering during low-volume hours",
+    summary: "Exit timing redesign (v3 reward fix)",
     details: [
-      "Filtered out 3 false entries per week during Asian session",
-      "Kronos embeddings now weight volume features more heavily",
-      "Night-time win rate improved from 68% to 79%",
+      "Root cause of 0% WR identified: fee bug + episode death loop",
+      "Rebuilt reward function with correct fee accounting",
+      "Win rate recovered from 0% to ~36% baseline",
     ],
-    metrics: { winRate: "+2.1%", avgPnl: "+1.4 bps", trades: "98 avg" },
+    metrics: { winRate: "36%", avgPnl: "-3.2 bps", trades: "3.1/day" },
   },
   {
     week: 11,
     date: "Mar 14, 2026",
-    summary: "Reward shaping tuned for faster profit-taking",
+    summary: "130+ autoresearch experiments completed",
     details: [
-      "Increased exit_pnl_multiplier from 100 to 200",
-      "Reduced overtime penalty threshold",
-      "Profit-taking speed improved without sacrificing win rate",
+      "Exhaustive reward-shaping sweep across entry cost, neutral penalty, win bonus",
+      "Best candidate: entry_cost_1.0 (29.13 bps in-sample)",
+      "Ceiling identified — shifting focus to architecture changes",
     ],
-    metrics: { winRate: "+0.3%", avgPnl: "+2.1 bps", trades: "112 avg" },
+    metrics: { winRate: "~38%", avgPnl: "+2.1 bps IS", trades: "~3/day" },
   },
 ];
 
 export const skillRadar = [
-  { skill: "Entry Timing", current: 82, previous: 78 },
-  { skill: "Exit Timing", current: 76, previous: 71 },
-  { skill: "Risk Mgmt", current: 88, previous: 85 },
-  { skill: "Trend Detection", current: 79, previous: 79 },
-  { skill: "Volatility", current: 71, previous: 65 },
-  { skill: "Position Sizing", current: 84, previous: 82 },
+  { skill: "Entry Timing", current: 38, previous: 32 },
+  { skill: "Exit Timing", current: 35, previous: 10 },
+  { skill: "Risk Mgmt", current: 52, previous: 45 },
+  { skill: "Trend Detection", current: 41, previous: 39 },
+  { skill: "Volatility", current: 33, previous: 28 },
+  { skill: "Position Sizing", current: 45, previous: 40 },
 ];
 
 export const recentPerformance = [
-  { period: "Today", pnl: 0.12, trades: 3, winRate: 66.7 },
-  { period: "This Week", pnl: 0.8, trades: 14, winRate: 78.6 },
-  { period: "This Month", pnl: 3.2, trades: 62, winRate: 82.3 },
-  { period: "All Time", pnl: 14.7, trades: 847, winRate: 82.1 },
+  { period: "Today", pnl: 0.0, trades: 0, winRate: 0 },
+  { period: "This Week", pnl: 0.1, trades: 8, winRate: 37.5 },
+  { period: "This Month", pnl: -0.4, trades: 94, winRate: 39.4 },
+  { period: "All Time", pnl: -2.1, trades: 312, winRate: 40.3 },
 ];
 
 // ===== TRADING PAGE DATA =====
 
 export const dailyPnl = Array.from({ length: 31 }, (_, i) => {
-  const pnl = (Math.random() - 0.35) * 1.2;
+  const pnl = (Math.random() - 0.55) * 0.8;
   return {
     date: `Mar ${i + 1}`,
     pnl: Math.round(pnl * 100) / 100,
-    trades: Math.floor(Math.random() * 4) + 1,
+    trades: Math.floor(Math.random() * 5) + 1,
   };
 });
 
@@ -130,20 +130,20 @@ export const weeklyPnl = [
 ];
 
 export const tradeDurations = [
-  { range: "< 15m", count: 89, avgPnl: 8.2 },
-  { range: "15-30m", count: 214, avgPnl: 15.7 },
-  { range: "30m-1h", count: 287, avgPnl: 24.1 },
-  { range: "1-2h", count: 156, avgPnl: 22.8 },
-  { range: "2-4h", count: 72, avgPnl: 18.3 },
-  { range: "> 4h", count: 29, avgPnl: -4.6 },
+  { range: "< 15m", count: 42, avgPnl: -5.1 },
+  { range: "15-30m", count: 78, avgPnl: -1.8 },
+  { range: "30m-1h", count: 94, avgPnl: 0.4 },
+  { range: "1-2h", count: 56, avgPnl: -2.1 },
+  { range: "2-4h", count: 28, avgPnl: -3.7 },
+  { range: "> 4h", count: 14, avgPnl: -8.2 },
 ];
 
 export const streaks = {
-  currentStreak: { type: "win" as const, length: 4 },
-  longestWinStreak: 12,
-  longestLossStreak: 4,
-  avgWinStreak: 3.8,
-  avgLossStreak: 1.4,
+  currentStreak: { type: "loss" as "win" | "loss", length: 2 },
+  longestWinStreak: 5,
+  longestLossStreak: 7,
+  avgWinStreak: 1.8,
+  avgLossStreak: 2.6,
   streakHistory: [
     { type: "win", length: 5 },
     { type: "loss", length: 2 },
@@ -162,11 +162,10 @@ export const streaks = {
 };
 
 export const hourlyPerformance = Array.from({ length: 24 }, (_, hour) => {
-  // Asian session (0-8 UTC) weaker, London/NY (13-21 UTC) stronger
-  const sessionBonus = hour >= 13 && hour <= 21 ? 8 : hour >= 0 && hour <= 8 ? -5 : 0;
-  const avgPnl = Math.round((Math.random() * 20 - 5 + sessionBonus) * 10) / 10;
-  const trades = Math.floor(Math.random() * 30) + 5;
-  const winRate = Math.min(95, Math.max(45, 75 + sessionBonus + (Math.random() - 0.5) * 20));
+  const sessionBonus = hour >= 13 && hour <= 21 ? 3 : hour >= 0 && hour <= 8 ? -3 : 0;
+  const avgPnl = Math.round((Math.random() * 12 - 7 + sessionBonus) * 10) / 10;
+  const trades = Math.floor(Math.random() * 20) + 3;
+  const winRate = Math.min(55, Math.max(25, 38 + sessionBonus + (Math.random() - 0.5) * 15));
   return {
     hour: `${hour.toString().padStart(2, "0")}:00`,
     avgPnl,
@@ -176,16 +175,16 @@ export const hourlyPerformance = Array.from({ length: 24 }, (_, hour) => {
 });
 
 export const tradingMetrics = {
-  profitFactor: 3.8,
-  expectancy: 20.27,
-  payoffRatio: 1.82,
-  avgWin: 36.8,
-  avgLoss: -20.2,
-  largestWin: 142.5,
-  largestLoss: -67.3,
-  avgSlippage: -0.8,
-  totalFees: -124.50,
-  netAfterFees: 1247.30,
+  profitFactor: 0.91,
+  expectancy: -1.8,
+  payoffRatio: 0.94,
+  avgWin: 18.2,
+  avgLoss: -19.4,
+  largestWin: 67.3,
+  largestLoss: -52.1,
+  avgSlippage: -1.2,
+  totalFees: -89.40,
+  netAfterFees: -210.50,
 };
 
 // ===== RISK PAGE DATA =====
@@ -200,30 +199,30 @@ export const drawdownCurve = Array.from({ length: 90 }, (_, i) => {
 });
 
 export const riskMetrics = {
-  maxDrawdown: -3.2,
-  maxDrawdownDate: "2026-02-14",
-  maxDrawdownDuration: "3d 7h",
-  currentDrawdown: -0.4,
-  avgDrawdown: -1.1,
-  var95: -0.82,
-  var99: -1.45,
-  cvar95: -1.12,
-  sortinoRatio: 3.41,
-  calmarRatio: 4.59,
-  exposureTime: 34.2,
-  avgExposurePerTrade: 42,
-  maxConsecutiveLosses: 4,
-  avgConsecutiveLosses: 1.4,
-  recoveryFactor: 4.6,
-  ulcerIndex: 0.89,
+  maxDrawdown: -8.7,
+  maxDrawdownDate: "2026-02-22",
+  maxDrawdownDuration: "11d 4h",
+  currentDrawdown: -2.1,
+  avgDrawdown: -4.3,
+  var95: -2.14,
+  var99: -3.87,
+  cvar95: -2.91,
+  sortinoRatio: 0.31,
+  calmarRatio: -0.24,
+  exposureTime: 48.5,
+  avgExposurePerTrade: 38,
+  maxConsecutiveLosses: 7,
+  avgConsecutiveLosses: 2.6,
+  recoveryFactor: -0.24,
+  ulcerIndex: 3.42,
 };
 
 export const consecutiveLosses = [
-  { streak: 1, frequency: 67, avgLoss: -12.3 },
-  { streak: 2, frequency: 23, avgLoss: -28.7 },
-  { streak: 3, frequency: 8, avgLoss: -51.2 },
-  { streak: 4, frequency: 2, avgLoss: -67.3 },
-  { streak: 5, frequency: 0, avgLoss: 0 },
+  { streak: 1, frequency: 34, avgLoss: -14.8 },
+  { streak: 2, frequency: 28, avgLoss: -31.2 },
+  { streak: 3, frequency: 19, avgLoss: -48.6 },
+  { streak: 4, frequency: 11, avgLoss: -62.1 },
+  { streak: 5, frequency: 6, avgLoss: -78.4 },
 ];
 
 // ===== MODEL PAGE DATA =====
@@ -239,59 +238,59 @@ export const trainingRewardCurve = Array.from({ length: 150 }, (_, epoch) => {
 });
 
 export const isVsOos = [
-  { metric: "Win Rate", inSample: 84.2, outOfSample: 79.8 },
-  { metric: "Avg PnL", inSample: 24.1, outOfSample: 18.3 },
-  { metric: "Sharpe", inSample: 2.6, outOfSample: 1.9 },
-  { metric: "Profit Factor", inSample: 4.2, outOfSample: 3.1 },
-  { metric: "Max DD", inSample: -2.1, outOfSample: -3.8 },
-  { metric: "Trades/Day", inSample: 2.3, outOfSample: 2.0 },
+  { metric: "Win Rate", inSample: 40.3, outOfSample: 36.1 },
+  { metric: "Avg PnL", inSample: 2.1, outOfSample: -3.8 },
+  { metric: "Sharpe", inSample: 0.52, outOfSample: 0.18 },
+  { metric: "Profit Factor", inSample: 1.02, outOfSample: 0.82 },
+  { metric: "Max DD", inSample: -5.4, outOfSample: -8.7 },
+  { metric: "Trades/Day", inSample: 3.4, outOfSample: 3.1 },
 ];
 
 export const actionDistribution = [
-  { action: "Long", percentage: 42, trades: 356, avgPnl: 22.4 },
-  { action: "Short", percentage: 31, trades: 263, avgPnl: 17.1 },
-  { action: "Neutral", percentage: 27, trades: 228, avgPnl: 0 },
+  { action: "Long", percentage: 38, trades: 119, avgPnl: -1.2 },
+  { action: "Short", percentage: 29, trades: 90, avgPnl: -2.6 },
+  { action: "Neutral", percentage: 33, trades: 103, avgPnl: 0 },
 ];
 
 export const confidenceDistribution = [
-  { range: "0-20%", count: 12, avgPnl: -8.3 },
-  { range: "20-40%", count: 45, avgPnl: 2.1 },
-  { range: "40-60%", count: 178, avgPnl: 12.8 },
-  { range: "60-80%", count: 389, avgPnl: 22.4 },
-  { range: "80-100%", count: 223, avgPnl: 28.7 },
+  { range: "0-20%", count: 28, avgPnl: -12.1 },
+  { range: "20-40%", count: 67, avgPnl: -4.8 },
+  { range: "40-60%", count: 112, avgPnl: -1.2 },
+  { range: "60-80%", count: 78, avgPnl: 1.4 },
+  { range: "80-100%", count: 27, avgPnl: 3.9 },
 ];
 
 export const featureImportance = [
-  { feature: "Kronos 5m Embedding", importance: 0.23, delta: 0.02 },
-  { feature: "RSI (14)", importance: 0.14, delta: -0.01 },
-  { feature: "Kronos 1h Embedding", importance: 0.12, delta: 0.03 },
-  { feature: "MACD Signal", importance: 0.09, delta: 0.01 },
-  { feature: "Bollinger %B", importance: 0.08, delta: 0.0 },
-  { feature: "Volume SMA Ratio", importance: 0.07, delta: -0.02 },
-  { feature: "Kronos Daily Embed", importance: 0.06, delta: 0.01 },
-  { feature: "ATR (14)", importance: 0.05, delta: 0.0 },
-  { feature: "OBV Slope", importance: 0.04, delta: 0.01 },
-  { feature: "Stoch RSI", importance: 0.03, delta: -0.01 },
+  { feature: "CVD 5m", importance: 0.18, delta: 0.03 },
+  { feature: "Taker Buy Ratio", importance: 0.14, delta: 0.01 },
+  { feature: "RSI (14)", importance: 0.11, delta: -0.01 },
+  { feature: "OFI 5m", importance: 0.09, delta: 0.02 },
+  { feature: "Volume Spike", importance: 0.08, delta: 0.0 },
+  { feature: "Futures Premium", importance: 0.07, delta: -0.01 },
+  { feature: "Trade Intensity", importance: 0.06, delta: 0.01 },
+  { feature: "Large Trade Imbalance", importance: 0.05, delta: 0.0 },
+  { feature: "Hurst Exponent", importance: 0.04, delta: 0.01 },
+  { feature: "ATR (14)", importance: 0.03, delta: -0.01 },
 ];
 
 export const retrainingHistory = [
-  { week: "W11", winRateBefore: 80.1, winRateAfter: 80.4, pnlBefore: 18.1, pnlAfter: 20.2, status: "improved" as const },
-  { week: "W12", winRateBefore: 80.4, winRateAfter: 82.5, pnlBefore: 20.2, pnlAfter: 21.6, status: "improved" as const },
-  { week: "W13", winRateBefore: 82.5, winRateAfter: 82.1, pnlBefore: 21.6, pnlAfter: 20.27, status: "regressed" as const },
+  { week: "W11", winRateBefore: 36.0, winRateAfter: 38.7, pnlBefore: -3.2, pnlAfter: -1.4, status: "improved" as const },
+  { week: "W12", winRateBefore: 38.7, winRateAfter: 39.1, pnlBefore: -1.4, pnlAfter: -1.1, status: "improved" as const },
+  { week: "W13", winRateBefore: 39.1, winRateAfter: 40.3, pnlBefore: -1.1, pnlAfter: -1.8, status: "regressed" as const },
 ];
 
 // ===== ANALYSIS PAGE DATA =====
 
 export const volatilityRegimes = [
-  { regime: "Low Vol", winRate: 78.3, avgPnl: 14.2, trades: 312, sharpe: 1.8 },
-  { regime: "Med Vol", winRate: 84.1, avgPnl: 22.8, trades: 389, sharpe: 2.4 },
-  { regime: "High Vol", winRate: 76.5, avgPnl: 18.9, trades: 146, sharpe: 1.5 },
+  { regime: "Low Vol", winRate: 42.8, avgPnl: 0.4, trades: 108, sharpe: 0.52 },
+  { regime: "Med Vol", winRate: 39.5, avgPnl: -2.1, trades: 134, sharpe: 0.31 },
+  { regime: "High Vol", winRate: 37.2, avgPnl: -4.3, trades: 70, sharpe: 0.12 },
 ];
 
 export const trendVsRange = [
-  { regime: "Strong Trend", winRate: 86.2, avgPnl: 28.4, trades: 198, direction: "Both" },
-  { regime: "Weak Trend", winRate: 81.3, avgPnl: 19.1, trades: 324, direction: "Both" },
-  { regime: "Ranging", winRate: 74.8, avgPnl: 10.2, trades: 325, direction: "Both" },
+  { regime: "Strong Trend", winRate: 43.1, avgPnl: 1.2, trades: 82, direction: "Both" },
+  { regime: "Weak Trend", winRate: 39.8, avgPnl: -2.4, trades: 128, direction: "Both" },
+  { regime: "Ranging", winRate: 37.9, avgPnl: -3.1, trades: 102, direction: "Both" },
 ];
 
 export const btcCorrelation = Array.from({ length: 60 }, (_, i) => {
@@ -304,9 +303,9 @@ export const btcCorrelation = Array.from({ length: 60 }, (_, i) => {
 });
 
 export const volumeRegimes = [
-  { regime: "Low Volume", winRate: 72.1, avgPnl: 8.4, trades: 187 },
-  { regime: "Normal Volume", winRate: 83.6, avgPnl: 22.1, trades: 445 },
-  { regime: "High Volume", winRate: 81.2, avgPnl: 19.8, trades: 215 },
+  { regime: "Low Volume", winRate: 36.4, avgPnl: -3.8, trades: 87 },
+  { regime: "Normal Volume", winRate: 41.2, avgPnl: -0.9, trades: 152 },
+  { regime: "High Volume", winRate: 40.8, avgPnl: -1.4, trades: 73 },
 ];
 
 // ===== AUTORESEARCH PAGE DATA =====
@@ -325,10 +324,10 @@ export const experimentLeaderboard = [
 
 export const sweepProgress = {
   total: 19,
-  completed: 9,
-  running: "huge_win_bonus",
-  championBps: 20.27,
-  eta: "Wed Apr 2",
+  completed: 19,
+  running: "—",
+  championBps: 29.13,
+  eta: "Complete",
 };
 
 // ===== HEALTH STATUS HELPERS =====
