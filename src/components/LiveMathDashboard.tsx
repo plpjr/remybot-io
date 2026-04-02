@@ -74,6 +74,7 @@ function hurstLabel(h: number): { label: string; color: string } {
 
 export default function LiveMathDashboard() {
   const { prices, currentPrice, futuresPrice, spotPrice, connected, tickCount, source } = useLiveBTC();
+  const [feed, setFeed] = useState<"spot" | "futures">("spot");
 
   // Debounced computation: recompute every 2 seconds
   const [computed, setComputed] = useState<ComputedMath | null>(null);
@@ -340,9 +341,24 @@ export default function LiveMathDashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-[var(--text)]">Live Mathematical Analysis</h2>
-          <p className="text-sm text-[var(--text-muted)]">Real-time BTC/USD price analysis via Coinbase WebSocket</p>
+          <p className="text-sm text-[var(--text-muted)]">Real-time price analysis via Coinbase — computing 30+ math features</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {/* Feed toggle */}
+          <div className="flex rounded-lg border border-[var(--border)] overflow-hidden text-xs font-medium">
+            <button
+              onClick={() => setFeed("spot")}
+              className={`px-3 py-1.5 transition-colors ${feed === "spot" ? "bg-blue-500 text-white" : "bg-[var(--card)] text-[var(--text-muted)] hover:text-[var(--text)]"}`}
+            >
+              Spot
+            </button>
+            <button
+              onClick={() => setFeed("futures")}
+              className={`px-3 py-1.5 transition-colors ${feed === "futures" ? "bg-emerald-500 text-white" : "bg-[var(--card)] text-[var(--text-muted)] hover:text-[var(--text)]"}`}
+            >
+              Futures
+            </button>
+          </div>
           <span className={`inline-block w-2.5 h-2.5 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`} />
           <span className="text-xs text-[var(--text-muted)]">{connected ? "Connected" : "Disconnected"}</span>
         </div>
@@ -354,13 +370,25 @@ export default function LiveMathDashboard() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">BTC / USD</p>
-              {source === "futures" ? (
+              {feed === "futures" ? (
                 <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-500">BIP Nano Futures</span>
               ) : (
-                <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500">BTC/USD Spot</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-500">Spot</span>
               )}
             </div>
-            <p className="text-4xl font-bold text-[var(--text)] tabular-nums">{fmtPrice(currentPrice)}</p>
+            <p className="text-4xl font-bold text-[var(--text)] tabular-nums">
+              {feed === "futures" && futuresPrice !== null ? fmtPrice(futuresPrice) : fmtPrice(currentPrice)}
+            </p>
+            {/* Show both prices when both available */}
+            {futuresPrice !== null && spotPrice !== null && (
+              <div className="flex gap-4 mt-1 text-xs text-[var(--text-muted)]">
+                <span>Spot: {fmtPrice(spotPrice)}</span>
+                <span>Futures: {fmtPrice(futuresPrice)}</span>
+                <span className={`font-semibold ${(futuresPrice - spotPrice) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                  Premium: {((futuresPrice - spotPrice) / spotPrice * 10000).toFixed(1)} bps
+                </span>
+              </div>
+            )}
           </div>
           <div className="flex gap-6 text-sm text-[var(--text-muted)]">
             <div>
