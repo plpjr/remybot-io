@@ -1,19 +1,11 @@
 "use client";
 
 import { useKronosData } from "@/lib/use-data";
-import { useChartTheme, tooltipStyle } from "@/lib/useChartTheme";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
 import { OverviewSkeleton } from "@/components/Skeleton";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import Chart from "@/components/Chart";
+import type { EChartsOption } from "@/components/Chart";
 import {
   TrendingUp,
   Target,
@@ -27,7 +19,6 @@ import PageHeader from "@/components/PageHeader";
 
 export default function OverviewPage() {
   const { data, loading } = useKronosData();
-  const ct = useChartTheme();
   const s = data.overview;
 
   if (loading) return (
@@ -35,6 +26,36 @@ export default function OverviewPage() {
       <OverviewSkeleton />
     </div>
   );
+
+  const equityOption: EChartsOption = {
+    tooltip: {
+      trigger: "axis",
+      formatter: (params: unknown) => {
+        const p = (params as { data: [string, number] }[])[0];
+        return `${p.data[0]}<br/>Equity: <b>$${p.data[1].toLocaleString()}</b>`;
+      },
+    },
+    xAxis: {
+      type: "category",
+      data: data.equityCurve.map((d) => d.date.slice(5)),
+      boundaryGap: false,
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: { formatter: (v: number) => `$${(v / 1000).toFixed(1)}k` },
+    },
+    series: [
+      {
+        type: "line",
+        data: data.equityCurve.map((d) => d.equity),
+        smooth: false,
+        showSymbol: false,
+        lineStyle: { width: 2.5 },
+        areaStyle: { opacity: 0.08 },
+        emphasis: { disabled: true },
+      },
+    ],
+  };
 
   return (
     <div className="px-6 py-8 max-w-7xl mx-auto space-y-8">
@@ -114,18 +135,7 @@ export default function OverviewPage() {
             ))}
           </div>
         </div>
-        <ResponsiveContainer width="100%" height={320}>
-          <LineChart data={data.equityCurve}>
-            <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-            <XAxis dataKey="date" tick={{ fontSize: 11, fill: ct.tick }} tickFormatter={(v) => v.slice(5)} />
-            <YAxis tick={{ fontSize: 11, fill: ct.tick }} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`} />
-            <Tooltip
-              contentStyle={tooltipStyle(ct)}
-              formatter={(value: unknown) => [`$${Number(value).toLocaleString()}`, "Equity"]}
-            />
-            <Line type="monotone" dataKey="equity" stroke={ct.line} strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: ct.line }} />
-          </LineChart>
-        </ResponsiveContainer>
+        <Chart option={equityOption} height={320} />
       </section>
 
       {/* Recent Performance */}

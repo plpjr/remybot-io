@@ -4,12 +4,64 @@ import { Brain, AlertTriangle } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import MockDataBanner from "@/components/MockDataBanner";
 import { HealthBadge, HealthDot } from "@/components/HealthIndicator";
-import { useChartTheme, tooltipStyle } from "@/lib/useChartTheme";
+import Chart from "@/components/Chart";
+import type { EChartsOption } from "@/components/Chart";
 import { trainingRewardCurve, isVsOos, actionDistribution, confidenceDistribution, featureImportance, retrainingHistory } from "@/lib/mock-data";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 
 export default function ModelPage() {
-  const ct = useChartTheme();
+  const rewardOption: EChartsOption = {
+    tooltip: { trigger: "axis" },
+    legend: { data: ["Current", "Baseline"], bottom: 0 },
+    grid: { bottom: 36 },
+    xAxis: {
+      type: "category",
+      data: trainingRewardCurve.map((d) => d.epoch),
+      name: "Epoch",
+      nameLocation: "center",
+      nameGap: 28,
+      nameTextStyle: { fontSize: 10 },
+    },
+    yAxis: { type: "value" },
+    series: [
+      {
+        name: "Current",
+        type: "line",
+        data: trainingRewardCurve.map((d) => d.reward),
+        showSymbol: false,
+        lineStyle: { width: 2 },
+      },
+      {
+        name: "Baseline",
+        type: "line",
+        data: trainingRewardCurve.map((d) => d.baseline),
+        showSymbol: false,
+        lineStyle: { width: 1.5, type: "dashed" },
+        itemStyle: { color: "#94a3b8" },
+      },
+    ],
+  };
+
+  const confidenceOption: EChartsOption = {
+    tooltip: { trigger: "axis" },
+    xAxis: {
+      type: "category",
+      data: confidenceDistribution.map((d) => d.range),
+      axisLabel: { fontSize: 10 },
+    },
+    yAxis: { type: "value" },
+    series: [{
+      type: "bar",
+      data: confidenceDistribution.map((d) => ({
+        value: d.count,
+        itemStyle: {
+          color: d.avgPnl > 15 ? "#2563eb" : d.avgPnl > 0 ? "#93c5fd" : "#fca5a5",
+          borderRadius: [4, 4, 0, 0],
+        },
+      })),
+      barMaxWidth: 40,
+    }],
+  };
+
   return (
     <div className="px-6 py-8 max-w-7xl mx-auto space-y-8">
       <PageHeader title="Model" description="Training performance and model diagnostics" icon={Brain} />
@@ -19,20 +71,7 @@ export default function ModelPage() {
       <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
         <h3 className="text-lg font-semibold text-[var(--text)] mb-1">Training Reward Curve</h3>
         <p className="text-sm text-[var(--text-muted)] mb-6">Episode reward over 150 training epochs (latest model)</p>
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={trainingRewardCurve}>
-            <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-            <XAxis dataKey="epoch" tick={{ fontSize: 11, fill: ct.tick }} label={{ value: "Epoch", position: "bottom", fontSize: 10, fill: ct.tick }} />
-            <YAxis tick={{ fontSize: 11, fill: ct.tick }} />
-            <Tooltip contentStyle={tooltipStyle(ct)} />
-            <Line type="monotone" dataKey="reward" stroke={ct.line} strokeWidth={2} dot={false} name="Current" />
-            <Line type="monotone" dataKey="baseline" stroke={ct.lineMuted} strokeWidth={1.5} strokeDasharray="4 4" dot={false} name="Baseline" />
-          </LineChart>
-        </ResponsiveContainer>
-        <div className="flex justify-center gap-6 mt-2">
-          <span className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]"><span className="w-3 h-0.5 bg-blue-600 dark:bg-blue-400 rounded" /> Current model</span>
-          <span className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]"><span className="w-3 h-0.5 bg-slate-400 rounded" /> Baseline</span>
-        </div>
+        <Chart option={rewardOption} height={300} />
       </section>
 
       {/* IS vs OOS */}
@@ -110,19 +149,7 @@ export default function ModelPage() {
         <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
           <h3 className="text-lg font-semibold text-[var(--text)] mb-1">Confidence Distribution</h3>
           <p className="text-sm text-[var(--text-muted)] mb-4">Model prediction confidence vs actual PnL</p>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={confidenceDistribution}>
-              <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-              <XAxis dataKey="range" tick={{ fontSize: 10, fill: ct.tick }} />
-              <YAxis tick={{ fontSize: 11, fill: ct.tick }} />
-              <Tooltip contentStyle={tooltipStyle(ct)} />
-              <Bar dataKey="count" name="Trades" radius={[4, 4, 0, 0]} maxBarSize={40}>
-                {confidenceDistribution.map((entry, i) => (
-                  <Cell key={i} fill={entry.avgPnl > 15 ? "#2563eb" : entry.avgPnl > 0 ? "#93c5fd" : "#fca5a5"} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <Chart option={confidenceOption} height={200} />
           <p className="text-xs text-[var(--text-muted)] mt-2">Higher confidence → higher PnL -- the model is well-calibrated</p>
         </section>
       </div>

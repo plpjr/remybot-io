@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { supabase } from "./supabase";
 import {
   fetchOverviewStats,
   fetchEquityCurve,
@@ -11,6 +12,9 @@ import {
   fetchExperiments,
   fetchActiveModel,
   fetchRecentPerformance,
+  fetchMicrostructureHourly,
+  fetchVolatilityRegime,
+  fetchDataFreshness,
   getSkillRadar,
   getWeeklyImprovements,
   type OverviewStats,
@@ -18,6 +22,9 @@ import {
   type Experiment,
   type ModelInfo,
   type ChangelogEntry,
+  type MicrostructureHourly,
+  type VolatilityRegime,
+  type DataFreshness,
 } from "./data";
 import {
   overviewStats as mockOverview,
@@ -52,6 +59,9 @@ export interface KronosData {
   experiments: Experiment[];
   activeModel: ModelInfo | null;
   changelog: ChangelogEntry[];
+  microstructureHourly: MicrostructureHourly[];
+  volatilityRegime: VolatilityRegime[];
+  dataFreshness: DataFreshness[];
 }
 
 export function useKronosData() {
@@ -67,9 +77,13 @@ export function useKronosData() {
     experiments: [],
     activeModel: null,
     changelog: [],
+    microstructureHourly: [],
+    volatilityRegime: [],
+    dataFreshness: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const subscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -83,6 +97,9 @@ export function useKronosData() {
         experiments,
         activeModel,
         changelog,
+        microstructureHourly,
+        volatilityRegime,
+        dataFreshness,
       ] = await Promise.all([
         fetchOverviewStats(),
         fetchEquityCurve(),
@@ -93,6 +110,9 @@ export function useKronosData() {
         fetchExperiments(),
         fetchActiveModel(),
         fetchChangelog(),
+        fetchMicrostructureHourly(),
+        fetchVolatilityRegime(),
+        fetchDataFreshness(),
       ]);
 
       setData({
@@ -107,6 +127,9 @@ export function useKronosData() {
         experiments,
         activeModel,
         changelog,
+        microstructureHourly,
+        volatilityRegime,
+        dataFreshness,
       });
       setError(null);
     } catch (e) {
@@ -118,8 +141,38 @@ export function useKronosData() {
 
   useEffect(() => {
     refresh();
+
+    // 60s polling fallback
     const interval = setInterval(refresh, 60_000);
-    return () => clearInterval(interval);
+
+    // Supabase Realtime subscriptions
+    const channel = supabase
+      .channel("kronos-realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "market_microstructure" },
+        () => { refresh(); }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "trade_journal" },
+        () => { refresh(); }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bot_heartbeat" },
+        () => { refresh(); }
+      )
+      .subscribe();
+
+    subscriptionRef.current = channel;
+
+    return () => {
+      clearInterval(interval);
+      if (subscriptionRef.current) {
+        supabase.removeChannel(subscriptionRef.current);
+      }
+    };
   }, [refresh]);
 
   return { data, loading, error, refresh };

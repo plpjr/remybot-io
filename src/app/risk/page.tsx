@@ -4,13 +4,68 @@ import { ShieldCheck } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import MockDataBanner from "@/components/MockDataBanner";
 import { HealthCard } from "@/components/HealthIndicator";
-import { useChartTheme, tooltipStyle } from "@/lib/useChartTheme";
+import Chart from "@/components/Chart";
+import type { EChartsOption } from "@/components/Chart";
 import { drawdownCurve, riskMetrics, consecutiveLosses, getHealthStatus } from "@/lib/mock-data";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 
 export default function RiskPage() {
   const r = riskMetrics;
-  const ct = useChartTheme();
+
+  const drawdownOption: EChartsOption = {
+    tooltip: {
+      trigger: "axis",
+      formatter: (params: unknown) => {
+        const p = (params as { name: string; data: number }[])[0];
+        return `${p.name}<br/>Drawdown: <b>${p.data}%</b>`;
+      },
+    },
+    xAxis: {
+      type: "category",
+      data: drawdownCurve.map((d) => d.date.slice(5)),
+      boundaryGap: false,
+    },
+    yAxis: {
+      type: "value",
+      max: 0,
+      axisLabel: { formatter: (v: number) => `${v}%` },
+    },
+    series: [{
+      type: "line",
+      data: drawdownCurve.map((d) => d.drawdown),
+      showSymbol: false,
+      lineStyle: { width: 2, color: "#ef4444" },
+      itemStyle: { color: "#ef4444" },
+      areaStyle: { color: "#fecaca", opacity: 0.3 },
+    }],
+  };
+
+  const lossStreakOption: EChartsOption = {
+    tooltip: {
+      trigger: "axis",
+      formatter: (params: unknown) => {
+        const p = (params as { name: string; data: number }[])[0];
+        return `Streak: ${p.name}<br/>Occurrences: <b>${p.data}</b>`;
+      },
+    },
+    xAxis: {
+      type: "category",
+      data: consecutiveLosses.filter((c) => c.frequency > 0).map((c) => String(c.streak)),
+      axisLabel: { fontSize: 11 },
+    },
+    yAxis: { type: "value" },
+    series: [{
+      type: "bar",
+      data: consecutiveLosses.filter((c) => c.frequency > 0).map((c) => ({
+        value: c.frequency,
+        itemStyle: {
+          color: c.streak <= 2 ? "#3b82f6" : c.streak <= 3 ? "#f59e0b" : "#ef4444",
+          borderRadius: [6, 6, 0, 0],
+        },
+      })),
+      barMaxWidth: 40,
+    }],
+  };
+
   return (
     <div className="px-6 py-8 max-w-7xl mx-auto space-y-8">
       <PageHeader title="Risk" description="Drawdown analysis and risk-adjusted performance metrics" icon={ShieldCheck} />
@@ -28,15 +83,7 @@ export default function RiskPage() {
       <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
         <h3 className="text-lg font-semibold text-[var(--text)] mb-1">Drawdown Over Time</h3>
         <p className="text-sm text-[var(--text-muted)] mb-6">Underwater equity curve -- time and depth of losses</p>
-        <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={drawdownCurve}>
-            <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-            <XAxis dataKey="date" tick={{ fontSize: 11, fill: ct.tick }} tickFormatter={(v) => v.slice(5)} />
-            <YAxis tick={{ fontSize: 11, fill: ct.tick }} tickFormatter={(v) => `${v}%`} domain={["auto", 0]} />
-            <Tooltip contentStyle={tooltipStyle(ct)} formatter={(v: unknown) => [`${v}%`, "Drawdown"]} />
-            <Line type="monotone" dataKey="drawdown" stroke="#ef4444" strokeWidth={2} dot={false} fill="#fecaca" fillOpacity={0.3} />
-          </LineChart>
-        </ResponsiveContainer>
+        <Chart option={drawdownOption} height={260} />
       </section>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -77,19 +124,7 @@ export default function RiskPage() {
         <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
           <h3 className="text-lg font-semibold text-[var(--text)] mb-1">Consecutive Loss Distribution</h3>
           <p className="text-sm text-[var(--text-muted)] mb-4">How often losing streaks occur</p>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={consecutiveLosses.filter(c => c.frequency > 0)}>
-              <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-              <XAxis dataKey="streak" tick={{ fontSize: 11, fill: ct.tick }} label={{ value: "Streak Length", position: "bottom", fontSize: 10, fill: ct.tick }} />
-              <YAxis tick={{ fontSize: 11, fill: ct.tick }} />
-              <Tooltip contentStyle={tooltipStyle(ct)} formatter={(v: unknown) => [`${v}`, "Occurrences"]} />
-              <Bar dataKey="frequency" radius={[6, 6, 0, 0]} maxBarSize={40}>
-                {consecutiveLosses.filter(c => c.frequency > 0).map((entry, i) => (
-                  <Cell key={i} fill={entry.streak <= 2 ? "#3b82f6" : entry.streak <= 3 ? "#f59e0b" : "#ef4444"} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <Chart option={lossStreakOption} height={200} />
           <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950 rounded-xl border border-amber-100 dark:border-amber-900">
             <p className="text-xs text-amber-700 dark:text-amber-400">
               <span className="font-semibold">Max consecutive losses: {r.maxConsecutiveLosses}</span> -- Only {consecutiveLosses.find(c => c.streak === r.maxConsecutiveLosses)?.frequency || 0} occurrences. Average losing streak is {r.avgConsecutiveLosses} trades.

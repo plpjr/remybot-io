@@ -1,16 +1,15 @@
 "use client";
 
-import { TrendingUp, DollarSign, Timer, Flame, BarChart3, Grid3X3 } from "lucide-react";
+import { TrendingUp, DollarSign, Timer, Flame, BarChart3, Grid3X3, Activity } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import MockDataBanner from "@/components/MockDataBanner";
 import { HealthCard } from "@/components/HealthIndicator";
-import { useChartTheme, tooltipStyle } from "@/lib/useChartTheme";
+import { useKronosData } from "@/lib/use-data";
+import Chart from "@/components/Chart";
+import type { EChartsOption } from "@/components/Chart";
 import {
   dailyPnl, weeklyPnl, tradeDurations, streaks, hourlyPerformance, tradingMetrics, getHealthStatus,
 } from "@/lib/mock-data";
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-} from "recharts";
 
 function MetricRow({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -26,7 +25,96 @@ function MetricRow({ label, value, sub }: { label: string; value: string; sub?: 
 
 export default function TradingPage() {
   const m = tradingMetrics;
-  const ct = useChartTheme();
+  const { data } = useKronosData();
+  const micro = data.microstructureHourly;
+  const hasMicro = micro.length > 0;
+
+  const microPriceOption: EChartsOption = hasMicro ? {
+    tooltip: { trigger: "axis" },
+    legend: { data: ["Avg Price", "Trade Intensity"], bottom: 0 },
+    grid: { bottom: 36 },
+    xAxis: {
+      type: "category",
+      data: micro.map((d) => d.time?.slice(5, 16) ?? ""),
+      boundaryGap: false,
+    },
+    yAxis: [
+      { type: "value", axisLabel: { formatter: (v: number) => `$${(v / 1000).toFixed(0)}k` }, position: "left" },
+      { type: "value", axisLabel: { formatter: (v: number) => v.toFixed(1) }, position: "right", splitLine: { show: false } },
+    ],
+    series: [
+      {
+        name: "Avg Price",
+        type: "line",
+        data: micro.map((d) => d.avg_price),
+        showSymbol: false,
+        lineStyle: { width: 2 },
+        areaStyle: { opacity: 0.06 },
+      },
+      {
+        name: "Trade Intensity",
+        type: "bar",
+        yAxisIndex: 1,
+        data: micro.map((d) => d.avg_trade_intensity),
+        itemStyle: { opacity: 0.5 },
+        barMaxWidth: 4,
+      },
+    ],
+  } : {};
+
+  const dailyPnlOption: EChartsOption = {
+    tooltip: {
+      trigger: "axis",
+      formatter: (params: unknown) => {
+        const p = (params as { name: string; data: number }[])[0];
+        return `${p.name}<br/>PnL: <b>${p.data.toFixed(2)}%</b>`;
+      },
+    },
+    xAxis: { type: "category", data: dailyPnl.map((d) => d.date), axisLabel: { interval: 2, fontSize: 10 } },
+    yAxis: { type: "value", axisLabel: { formatter: (v: number) => `${v}%` } },
+    series: [{
+      type: "bar",
+      data: dailyPnl.map((d) => ({
+        value: d.pnl,
+        itemStyle: { color: d.pnl >= 0 ? "#10b981" : "#ef4444", borderRadius: [4, 4, 0, 0] },
+      })),
+      barMaxWidth: 20,
+    }],
+  };
+
+  const weeklyPnlOption: EChartsOption = {
+    tooltip: {
+      trigger: "axis",
+      formatter: (params: unknown) => {
+        const p = (params as { name: string; data: number }[])[0];
+        return `${p.name}<br/>PnL: <b>${p.data}%</b>`;
+      },
+    },
+    xAxis: { type: "category", data: weeklyPnl.map((d) => d.week) },
+    yAxis: { type: "value", axisLabel: { formatter: (v: number) => `${v}%` } },
+    series: [{
+      type: "bar",
+      data: weeklyPnl.map((d) => ({
+        value: d.pnl,
+        itemStyle: { color: d.pnl >= 0 ? "#3b82f6" : "#ef4444", borderRadius: [4, 4, 0, 0] },
+      })),
+      barMaxWidth: 30,
+    }],
+  };
+
+  const durationOption: EChartsOption = {
+    tooltip: { trigger: "axis" },
+    xAxis: { type: "value" },
+    yAxis: { type: "category", data: tradeDurations.map((d) => d.range), inverse: true },
+    series: [{
+      type: "bar",
+      data: tradeDurations.map((d) => d.count),
+      itemStyle: { color: "#3b82f6", borderRadius: [0, 4, 4, 0] },
+      barMaxWidth: 20,
+    }],
+    grid: { left: 70 },
+  };
+
   return (
     <div className="px-6 py-8 max-w-7xl mx-auto space-y-8">
       <PageHeader title="Trading" description="Detailed trade analysis and PnL breakdown" icon={TrendingUp} />
@@ -40,6 +128,18 @@ export default function TradingPage() {
         <HealthCard label="Net After Fees" value={`$${m.netAfterFees.toLocaleString()}`} status="healthy" sub={`Fees: $${Math.abs(m.totalFees).toFixed(2)}`} />
       </div>
 
+      {/* Microstructure Price Chart (live data) */}
+      {hasMicro && (
+        <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+          <div className="flex items-center gap-2 mb-1">
+            <Activity className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <h3 className="text-lg font-semibold text-[var(--text)]">BTC Price + Microstructure</h3>
+          </div>
+          <p className="text-sm text-[var(--text-muted)] mb-6">Hourly averages from live order flow data</p>
+          <Chart option={microPriceOption} height={280} />
+        </section>
+      )}
+
       {/* Daily PnL Chart */}
       <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
         <div className="flex items-center gap-2 mb-1">
@@ -47,19 +147,7 @@ export default function TradingPage() {
           <h3 className="text-lg font-semibold text-[var(--text)]">Daily PnL</h3>
         </div>
         <p className="text-sm text-[var(--text-muted)] mb-6">Profit and loss by day (March 2026)</p>
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={dailyPnl}>
-            <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: ct.tick }} interval={2} />
-            <YAxis tick={{ fontSize: 11, fill: ct.tick }} tickFormatter={(v) => `${v}%`} />
-            <Tooltip contentStyle={tooltipStyle(ct)} formatter={(value: unknown) => [`${Number(value).toFixed(2)}%`, "PnL"]} />
-            <Bar dataKey="pnl" radius={[4, 4, 0, 0]} maxBarSize={20}>
-              {dailyPnl.map((entry, i) => (
-                <Cell key={i} fill={entry.pnl >= 0 ? "#10b981" : "#ef4444"} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <Chart option={dailyPnlOption} height={240} />
       </section>
 
       {/* Weekly PnL */}
@@ -69,19 +157,7 @@ export default function TradingPage() {
           <h3 className="text-lg font-semibold text-[var(--text)]">Weekly PnL</h3>
         </div>
         <p className="text-sm text-[var(--text-muted)] mb-6">Aggregated weekly returns</p>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={weeklyPnl}>
-            <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-            <XAxis dataKey="week" tick={{ fontSize: 11, fill: ct.tick }} />
-            <YAxis tick={{ fontSize: 11, fill: ct.tick }} tickFormatter={(v) => `${v}%`} />
-            <Tooltip contentStyle={tooltipStyle(ct)} formatter={(v: unknown) => [`${v}%`, "PnL"]} />
-            <Bar dataKey="pnl" radius={[4, 4, 0, 0]} maxBarSize={30}>
-              {weeklyPnl.map((entry, i) => (
-                <Cell key={i} fill={entry.pnl >= 0 ? "#3b82f6" : "#ef4444"} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <Chart option={weeklyPnlOption} height={200} />
       </section>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -92,15 +168,7 @@ export default function TradingPage() {
             <h3 className="text-lg font-semibold text-[var(--text)]">Trade Duration</h3>
           </div>
           <p className="text-sm text-[var(--text-muted)] mb-4">Hold time distribution and impact on PnL</p>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={tradeDurations} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-              <XAxis type="number" tick={{ fontSize: 11, fill: ct.tick }} />
-              <YAxis type="category" dataKey="range" tick={{ fontSize: 11, fill: ct.tick }} width={60} />
-              <Tooltip contentStyle={tooltipStyle(ct)} formatter={(v: unknown, name: unknown) => [name === "count" ? `${v}` : `${v} bps`, name === "count" ? "Trades" : "Avg PnL"]} />
-              <Bar dataKey="count" fill="#3b82f6" radius={[0, 4, 4, 0]} maxBarSize={20} />
-            </BarChart>
-          </ResponsiveContainer>
+          <Chart option={durationOption} height={200} />
           <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950 rounded-xl border border-blue-100 dark:border-blue-900">
             <p className="text-xs text-blue-700 dark:text-blue-400">
               <span className="font-semibold">Sweet spot:</span> 30m-1h trades have the highest avg PnL (+{tradeDurations[2].avgPnl} bps). Trades over 4h tend to lose money.

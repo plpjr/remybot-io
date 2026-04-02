@@ -4,11 +4,12 @@ import { BarChart3 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import MockDataBanner from "@/components/MockDataBanner";
 import { HealthDot } from "@/components/HealthIndicator";
-import { useChartTheme, tooltipStyle } from "@/lib/useChartTheme";
+import { useKronosData } from "@/lib/use-data";
+import Chart from "@/components/Chart";
+import type { EChartsOption } from "@/components/Chart";
 import { volatilityRegimes, trendVsRange, btcCorrelation, volumeRegimes } from "@/lib/mock-data";
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 
-function RegimeTable({ title, description, data, ct }: { title: string; description: string; ct: ReturnType<typeof useChartTheme>; data: { regime: string; winRate: number; avgPnl: number; trades: number; sharpe?: number }[] }) {
+function RegimeTable({ title, description, data }: { title: string; description: string; data: { regime: string; winRate: number; avgPnl: number; trades: number; sharpe?: number }[] }) {
   return (
     <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
       <h3 className="text-lg font-semibold text-[var(--text)] mb-1">{title}</h3>
@@ -61,7 +62,9 @@ function RegimeTable({ title, description, data, ct }: { title: string; descript
 }
 
 export default function AnalysisPage() {
-  const ct = useChartTheme();
+  const { data: kronosData } = useKronosData();
+  const volRegime = kronosData.volatilityRegime;
+  const hasVolRegime = volRegime.length > 0;
 
   const n = btcCorrelation.length;
   const meanX = btcCorrelation.reduce((s, p) => s + p.btcReturn, 0) / n;
@@ -71,14 +74,118 @@ export default function AnalysisPage() {
   const stdY = Math.sqrt(btcCorrelation.reduce((s, p) => s + (p.botReturn - meanY) ** 2, 0) / n);
   const corr = cov / (stdX * stdY);
 
+  const scatterOption: EChartsOption = {
+    tooltip: {
+      trigger: "item",
+      formatter: (params: unknown) => {
+        const p = params as { data: number[] };
+        return `BTC: ${p.data[0]}%<br/>Bot: ${p.data[1]}%`;
+      },
+    },
+    xAxis: {
+      type: "value",
+      name: "BTC Return %",
+      nameLocation: "center",
+      nameGap: 28,
+      nameTextStyle: { fontSize: 10 },
+    },
+    yAxis: {
+      type: "value",
+      name: "Bot Return %",
+      nameLocation: "center",
+      nameGap: 38,
+      nameTextStyle: { fontSize: 10 },
+    },
+    series: [{
+      type: "scatter",
+      data: btcCorrelation.map((d) => [d.btcReturn, d.botReturn]),
+      symbolSize: 8,
+      itemStyle: { color: "#3b82f6", opacity: 0.6 },
+    }],
+  };
+
+  const volumeOption: EChartsOption = {
+    tooltip: {
+      trigger: "axis",
+      formatter: (params: unknown) => {
+        const p = (params as { name: string; data: { value: number } }[])[0];
+        return `${p.name}<br/>Avg PnL: <b>+${p.data.value} bps</b>`;
+      },
+    },
+    xAxis: {
+      type: "category",
+      data: volumeRegimes.map((d) => d.regime),
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: { formatter: (v: number) => `${v} bps` },
+    },
+    series: [{
+      type: "bar",
+      data: volumeRegimes.map((d) => ({
+        value: d.avgPnl,
+        itemStyle: {
+          color: d.avgPnl > 15 ? "#3b82f6" : d.avgPnl > 5 ? "#fbbf24" : "#f87171",
+          borderRadius: [6, 6, 0, 0],
+        },
+      })),
+      barMaxWidth: 60,
+    }],
+  };
+
+  // Live volatility regime chart
+  const volRegimeOption: EChartsOption = hasVolRegime ? {
+    tooltip: { trigger: "axis" },
+    legend: { data: ["Volatility", "Hurst", "Predictability"], bottom: 0 },
+    grid: { bottom: 36 },
+    xAxis: {
+      type: "category",
+      data: volRegime.map((d) => d.time?.slice(5, 16) ?? ""),
+      boundaryGap: false,
+    },
+    yAxis: { type: "value" },
+    series: [
+      {
+        name: "Volatility",
+        type: "line",
+        data: volRegime.map((d) => Number(d.avg_vol?.toFixed(4))),
+        showSymbol: false,
+        lineStyle: { width: 2 },
+      },
+      {
+        name: "Hurst",
+        type: "line",
+        data: volRegime.map((d) => Number(d.avg_hurst?.toFixed(4))),
+        showSymbol: false,
+        lineStyle: { width: 2 },
+      },
+      {
+        name: "Predictability",
+        type: "line",
+        data: volRegime.map((d) => Number(d.avg_predictability?.toFixed(4))),
+        showSymbol: false,
+        lineStyle: { width: 2 },
+      },
+    ],
+  } : {};
+
   return (
     <div className="px-6 py-8 max-w-7xl mx-auto space-y-8">
       <PageHeader title="Analysis" description="Market regime analysis and conditional performance" icon={BarChart3} />
       <MockDataBanner />
 
+      {/* Live Volatility Regime (from Supabase view) */}
+      {hasVolRegime && (
+        <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+          <h3 className="text-lg font-semibold text-[var(--text)] mb-1">Live Volatility Regime</h3>
+          <p className="text-sm text-[var(--text-muted)] mb-6">Hourly averages from statistical features -- vol, Hurst exponent, predictability</p>
+          <Chart option={volRegimeOption} height={280} />
+        </section>
+      )}
+
       <div className="grid md:grid-cols-2 gap-6">
-        <RegimeTable title="Performance by Volatility" description="How the bot performs in different volatility environments" data={volatilityRegimes} ct={ct} />
-        <RegimeTable title="Trend vs Range" description="Performance when BTC is trending vs consolidating" data={trendVsRange} ct={ct} />
+        <RegimeTable title="Performance by Volatility" description="How the bot performs in different volatility environments" data={volatilityRegimes} />
+        <RegimeTable title="Trend vs Range" description="Performance when BTC is trending vs consolidating" data={trendVsRange} />
       </div>
 
       {/* BTC Correlation Scatter */}
@@ -90,34 +197,14 @@ export default function AnalysisPage() {
           </div>
         </div>
         <p className="text-sm text-[var(--text-muted)] mb-6">Bot returns vs BTC price movement -- lower correlation = more independent alpha</p>
-        <ResponsiveContainer width="100%" height={300}>
-          <ScatterChart>
-            <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-            <XAxis type="number" dataKey="btcReturn" name="BTC Return" tick={{ fontSize: 11, fill: ct.tick }} label={{ value: "BTC Return %", position: "bottom", fontSize: 10, fill: ct.tick }} />
-            <YAxis type="number" dataKey="botReturn" name="Bot Return" tick={{ fontSize: 11, fill: ct.tick }} label={{ value: "Bot Return %", angle: -90, position: "insideLeft", fontSize: 10, fill: ct.tick }} />
-            <Tooltip contentStyle={tooltipStyle(ct)} formatter={(v: unknown) => [`${v}%`]} cursor={{ strokeDasharray: "3 3" }} />
-            <Scatter data={btcCorrelation} fill="#3b82f6" fillOpacity={0.6} />
-          </ScatterChart>
-        </ResponsiveContainer>
+        <Chart option={scatterOption} height={300} />
       </section>
 
       {/* Volume Regimes */}
       <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
         <h3 className="text-lg font-semibold text-[var(--text)] mb-1">Volume Regime Performance</h3>
         <p className="text-sm text-[var(--text-muted)] mb-4">How trade volume conditions affect bot profitability</p>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={volumeRegimes}>
-            <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-            <XAxis dataKey="regime" tick={{ fontSize: 11, fill: ct.tick }} />
-            <YAxis tick={{ fontSize: 11, fill: ct.tick }} tickFormatter={(v) => `${v} bps`} />
-            <Tooltip contentStyle={tooltipStyle(ct)} formatter={(v: unknown) => [`+${v} bps`, "Avg PnL"]} />
-            <Bar dataKey="avgPnl" radius={[6, 6, 0, 0]} maxBarSize={60}>
-              {volumeRegimes.map((entry, i) => (
-                <Cell key={i} fill={entry.avgPnl > 15 ? "#3b82f6" : entry.avgPnl > 5 ? "#fbbf24" : "#f87171"} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <Chart option={volumeOption} height={200} />
         <div className="mt-3 p-3 bg-red-50 dark:bg-red-950 rounded-xl border border-red-100 dark:border-red-900">
           <p className="text-xs text-red-700 dark:text-red-400"><span className="font-semibold">Low volume weakness:</span> Only +8.4 bps avg PnL during low-volume periods (72.1% WR). Consider reducing position size or filtering entries during low-volume hours.</p>
         </div>

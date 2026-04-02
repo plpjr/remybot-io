@@ -306,3 +306,71 @@ export function getSkillRadar() {
 export function getWeeklyImprovements() {
   return mockImprovements;
 }
+
+/* ─── View-based Fetch Functions ─── */
+
+export interface MicrostructureHourly {
+  time: string;
+  avg_price: number;
+  avg_obi: number;
+  avg_cvd_5m: number;
+  avg_taker_buy_ratio: number;
+  avg_futures_premium_bps: number;
+  avg_volume_spike: number;
+  avg_trade_intensity: number;
+}
+
+export interface VolatilityRegime {
+  time: string;
+  avg_vol: number;
+  avg_hurst: number;
+  avg_predictability: number;
+  avg_regime_pc1: number;
+}
+
+export interface DataFreshness {
+  source: string;
+  total_rows: number;
+  latest_data: string;
+  hours_stale: number;
+}
+
+export async function fetchMicrostructureHourly(): Promise<MicrostructureHourly[]> {
+  try {
+    const { data } = await supabase
+      .from("v_grafana_microstructure_hourly")
+      .select("*")
+      .order("time", { ascending: true })
+      .limit(720);
+
+    return (data as MicrostructureHourly[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchVolatilityRegime(): Promise<VolatilityRegime[]> {
+  try {
+    const { data } = await supabase
+      .from("v_grafana_volatility_regime")
+      .select("*")
+      .order("time", { ascending: true })
+      .limit(720);
+
+    return (data as VolatilityRegime[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchDataFreshness(): Promise<DataFreshness[]> {
+  try {
+    const { data } = await supabase
+      .from("v_grafana_data_freshness")
+      .select("*");
+
+    return (data as DataFreshness[]) ?? [];
+  } catch {
+    return [];
+  }
+}
