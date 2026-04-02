@@ -3,6 +3,7 @@
 import { BarChart3 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import MockDataBanner from "@/components/MockDataBanner";
+import LiveMathDashboard from "@/components/LiveMathDashboard";
 import { HealthDot } from "@/components/HealthIndicator";
 import { useKronosData } from "@/lib/use-data";
 import Chart from "@/components/Chart";
@@ -173,6 +174,9 @@ export default function AnalysisPage() {
     <div className="px-6 py-8 max-w-7xl mx-auto space-y-8">
       <PageHeader title="Analysis" description="Market regime analysis and conditional performance" icon={BarChart3} />
       <MockDataBanner />
+
+      {/* Live Mathematical Analysis */}
+      <LiveMathDashboard />
 
       {/* Live Volatility Regime (from Supabase view) */}
       {hasVolRegime && (
