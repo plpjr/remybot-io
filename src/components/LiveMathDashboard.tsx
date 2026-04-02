@@ -15,6 +15,7 @@ import {
   rollingPCA,
   annualizeVol, annualizeDrift,
 } from "@/lib/live-math";
+import { Activity, Zap, Brain, TrendingUp, BarChart3 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -39,8 +40,6 @@ interface ComputedMath {
   autocorr1: number | null;
 }
 
-// ─── History for rolling charts ───────────────────────────────────────
-
 interface HistoryPoint {
   time: string;
   hurst: number;
@@ -64,19 +63,36 @@ function fmtPrice(v: number | null | undefined): string {
   return v.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 }
 
-function hurstLabel(h: number): { label: string; color: string } {
-  if (h < 0.45) return { label: "Mean Reverting", color: "text-emerald-500" };
-  if (h < 0.55) return { label: "Random Walk", color: "text-amber-500" };
-  return { label: "Trending", color: "text-red-500" };
+function hurstLabel(h: number): { label: string; color: string; trend: "up" | "down" | "neutral" } {
+  if (h < 0.45) return { label: "Mean Reverting", color: "text-emerald-500", trend: "up" };
+  if (h < 0.55) return { label: "Random Walk", color: "text-amber-500", trend: "neutral" };
+  return { label: "Trending", color: "text-red-500", trend: "down" };
+}
+
+// Simple internal StatCard for the math dashboard to avoid prop mismatches with the main StatCard
+function MathStatCard({ label, value, sub, icon: Icon, trend }: { label: string; value: string; sub: string; icon: any; trend?: "up" | "down" | "neutral" }) {
+  return (
+    <div className="bg-[var(--card)] rounded-2xl p-5 border border-[var(--border)] shadow-sm">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="p-2 bg-blue-50 dark:bg-blue-950 rounded-lg">
+          <Icon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+        </div>
+        <p className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">{label}</p>
+      </div>
+      <p className="text-xl font-bold text-[var(--text)] tabular-nums">{value}</p>
+      <p className={`text-[10px] mt-1 font-medium ${trend === "up" ? "text-emerald-500" : trend === "down" ? "text-red-500" : "text-[var(--text-muted)]"}`}>
+        {sub}
+      </p>
+    </div>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────
 
 export default function LiveMathDashboard() {
-  const { prices, currentPrice, futuresPrice, spotPrice, connected, tickCount, source } = useLiveBTC();
+  const { prices, currentPrice, futuresPrice, spotPrice, connected, tickCount } = useLiveBTC();
   const [feed, setFeed] = useState<"spot" | "futures">("spot");
 
-  // Debounced computation: recompute every 2 seconds
   const [computed, setComputed] = useState<ComputedMath | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const lastComputeRef = useRef(0);
@@ -90,8 +106,7 @@ export default function LiveMathDashboard() {
     const priceArr = prices.map((p) => p.price);
     const returns = logReturns(priceArr);
 
-    // Average tick interval
-    let avgInterval = 5; // default 5s
+    let avgInterval = 5;
     if (prices.length >= 2) {
       const totalTime = (prices[prices.length - 1].timestamp - prices[0].timestamp) / 1000;
       avgInterval = totalTime / (prices.length - 1) || 5;
@@ -101,7 +116,6 @@ export default function LiveMathDashboard() {
     const hurst = hurstExponent(returns);
     const ent = shannonEntropy(returns);
 
-    // Build volatility proxy for PCA
     const volProxy: number[] = [];
     const momProxy: number[] = [];
     for (let i = 0; i < returns.length; i++) {
@@ -135,7 +149,6 @@ export default function LiveMathDashboard() {
 
     setComputed(result);
 
-    // Append to history
     if (hurst !== null && ent !== null) {
       const timeStr = new Date().toLocaleTimeString();
       setHistory((prev) => {
@@ -151,39 +164,15 @@ export default function LiveMathDashboard() {
 
   const minDataReady = prices.length >= 20;
 
-  // ─── Chart Options ──────────────────────────────────────────────────
-
   const priceChartOption: EChartsOption = useMemo(() => ({
     tooltip: { trigger: "axis" },
     legend: { data: ["Price", "SMA(20)"], bottom: 0 },
-    grid: { bottom: 36 },
-    xAxis: {
-      type: "category",
-      data: last200.map((_, i) => String(i)),
-      show: false,
-    },
-    yAxis: {
-      type: "value",
-      scale: true,
-      axisLabel: { formatter: (v: number) => "$" + v.toLocaleString() },
-    },
+    grid: { bottom: 36, left: 10, right: 10, top: 10, containLabel: true },
+    xAxis: { type: "category", data: last200.map((_, i) => String(i)), show: false },
+    yAxis: { type: "value", scale: true, axisLabel: { formatter: (v: number) => "$" + v.toLocaleString() } },
     series: [
-      {
-        name: "Price",
-        type: "line",
-        data: last200,
-        showSymbol: false,
-        lineStyle: { width: 2, color: "#3b82f6" },
-        itemStyle: { color: "#3b82f6" },
-      },
-      {
-        name: "SMA(20)",
-        type: "line",
-        data: sma20Arr,
-        showSymbol: false,
-        lineStyle: { width: 1.5, color: "#f59e0b", type: "dashed" },
-        itemStyle: { color: "#f59e0b" },
-      },
+      { name: "Price", type: "line", data: last200, showSymbol: false, lineStyle: { width: 2, color: "#3b82f6" } },
+      { name: "SMA(20)", type: "line", data: sma20Arr, showSymbol: false, lineStyle: { width: 1.5, color: "#f59e0b", type: "dashed" } },
     ],
   }), [last200, sma20Arr]);
 
@@ -203,16 +192,14 @@ export default function LiveMathDashboard() {
     const labels = counts.map((_, i) => ((min + (i + 0.5) * binWidth) * 100).toFixed(3) + "%");
     return {
       tooltip: { trigger: "axis" },
+      grid: { left: 10, right: 10, top: 10, bottom: 10, containLabel: true },
       xAxis: { type: "category", data: labels, show: false },
-      yAxis: { type: "value", name: "Count" },
+      yAxis: { type: "value" },
       series: [{
         type: "bar",
         data: counts.map((c: number, i: number) => ({
           value: c,
-          itemStyle: {
-            color: i < bins / 2 ? "#ef4444" : "#22c55e",
-            borderRadius: [2, 2, 0, 0],
-          },
+          itemStyle: { color: i < bins / 2 ? "#ef4444" : "#22c55e", borderRadius: [2, 2, 0, 0] },
         })),
         barMaxWidth: 20,
       }],
@@ -225,15 +212,9 @@ export default function LiveMathDashboard() {
     const show = Math.min(50, frequencies.length);
     return {
       tooltip: { trigger: "axis" },
-      xAxis: {
-        type: "category",
-        data: frequencies.slice(0, show).map((f) => f.toFixed(3)),
-        name: "Frequency",
-        nameLocation: "center",
-        nameGap: 28,
-        show: false,
-      },
-      yAxis: { type: "value", name: "Magnitude" },
+      grid: { left: 10, right: 10, top: 10, bottom: 10, containLabel: true },
+      xAxis: { type: "category", data: frequencies.slice(0, show).map((f) => f.toFixed(3)), show: false },
+      yAxis: { type: "value" },
       series: [{
         type: "bar",
         data: magnitudes.slice(0, show).map((m) => ({
@@ -250,101 +231,26 @@ export default function LiveMathDashboard() {
     return {
       tooltip: { trigger: "axis" },
       legend: { data: ["Hurst", "Entropy"], bottom: 0 },
-      grid: { bottom: 36 },
-      xAxis: {
-        type: "category",
-        data: history.map((h) => h.time),
-        show: false,
-      },
+      grid: { bottom: 36, left: 10, right: 10, top: 10, containLabel: true },
+      xAxis: { type: "category", data: history.map((h) => h.time), show: false },
       yAxis: { type: "value", scale: true },
       series: [
-        {
-          name: "Hurst",
-          type: "line",
-          data: history.map((h) => Number(h.hurst.toFixed(4))),
-          showSymbol: false,
-          lineStyle: { width: 2, color: "#f59e0b" },
-          itemStyle: { color: "#f59e0b" },
-        },
-        {
-          name: "Entropy",
-          type: "line",
-          data: history.map((h) => Number(h.entropy.toFixed(4))),
-          showSymbol: false,
-          lineStyle: { width: 2, color: "#06b6d4" },
-          itemStyle: { color: "#06b6d4" },
-        },
+        { name: "Hurst", type: "line", data: history.map((h) => Number(h.hurst.toFixed(4))), showSymbol: false, lineStyle: { width: 2, color: "#f59e0b" } },
+        { name: "Entropy", type: "line", data: history.map((h) => Number(h.entropy.toFixed(4))), showSymbol: false, lineStyle: { width: 2, color: "#06b6d4" } },
       ],
     };
   }, [history]);
 
-  // ─── Math Table Rows ────────────────────────────────────────────────
-
-  const tableRows = useMemo(() => {
-    if (!computed) return [];
-    const c = computed;
-    const rows: { category: string; metric: string; value: string; interpretation: string }[] = [];
-
-    // Algebra
-    rows.push({ category: "Algebra", metric: "SMA(20)", value: fmtPrice(c.sma20), interpretation: "20-tick simple moving average" });
-    rows.push({ category: "Algebra", metric: "SMA(50)", value: fmtPrice(c.sma50), interpretation: "50-tick simple moving average" });
-    rows.push({ category: "Algebra", metric: "EMA(20)", value: fmtPrice(c.ema20), interpretation: "20-tick exponential moving average" });
-    rows.push({ category: "Algebra", metric: "Log Return", value: fmt(c.lastReturn, 6), interpretation: "Latest log return" });
-
-    // Statistics
-    rows.push({ category: "Statistics", metric: "Mean Return", value: fmt(c.stats?.mean, 8), interpretation: "Average log return" });
-    rows.push({ category: "Statistics", metric: "Std Dev", value: fmt(c.stats?.stdDev, 6), interpretation: "Return volatility" });
-    rows.push({ category: "Statistics", metric: "Skewness", value: fmt(c.stats?.skewness), interpretation: c.stats && c.stats.skewness < -0.5 ? "Left-tailed" : c.stats && c.stats.skewness > 0.5 ? "Right-tailed" : "Symmetric" });
-    rows.push({ category: "Statistics", metric: "Kurtosis", value: fmt(c.stats?.kurtosis), interpretation: c.stats && c.stats.kurtosis > 1 ? "Fat tails" : "Normal tails" });
-    rows.push({ category: "Statistics", metric: "Z-Score", value: fmt(c.stats?.zScore, 2), interpretation: c.stats && Math.abs(c.stats.zScore) > 2 ? "Extreme" : "Normal" });
-    rows.push({ category: "Statistics", metric: "Autocorr(1)", value: fmt(c.autocorr1), interpretation: c.autocorr1 !== null && Math.abs(c.autocorr1) > 0.1 ? "Serial dependence" : "Weak dependence" });
-
-    // Calculus
-    rows.push({ category: "Calculus", metric: "Rate of Change", value: fmtPrice(c.roc), interpretation: "Price velocity (1st derivative)" });
-    rows.push({ category: "Calculus", metric: "Acceleration", value: fmtPrice(c.accel), interpretation: "Price acceleration (2nd derivative)" });
-    rows.push({ category: "Calculus", metric: "Cumulative Return", value: fmtPct(c.cumReturn !== null ? c.cumReturn * 100 : null), interpretation: "Total return over window" });
-
-    // Information Theory
-    rows.push({ category: "Info Theory", metric: "Shannon Entropy", value: fmt(c.entropy, 3), interpretation: c.entropy !== null && c.entropy > 3 ? "High randomness" : "Lower randomness" });
-    rows.push({ category: "Info Theory", metric: "Predictability", value: fmtPct(c.predict), interpretation: c.predict !== null && c.predict > 50 ? "More structured" : "More random" });
-
-    // Fractal
-    const h = c.hurst;
-    rows.push({ category: "Fractal", metric: "Hurst Exponent", value: fmt(h), interpretation: h !== null ? hurstLabel(h).label : "--" });
-    rows.push({ category: "Fractal", metric: "Fractal Dimension", value: h !== null ? fmt(2 - h) : "--", interpretation: "2 - Hurst" });
-
-    // Signal
-    rows.push({ category: "Signal", metric: "Dominant Cycle", value: c.fft ? fmt(c.fft.dominantPeriod, 1) + " ticks" : "--", interpretation: "Strongest periodic component" });
-    rows.push({ category: "Signal", metric: "Spectral Entropy", value: fmt(c.fft?.spectralEntropy, 3), interpretation: c.fft && c.fft.spectralEntropy > 5 ? "Noisy spectrum" : "Some structure" });
-    rows.push({ category: "Signal", metric: "Noise Ratio", value: fmtPct(c.fft ? c.fft.noiseRatio * 100 : null), interpretation: c.fft && c.fft.noiseRatio < 0.7 ? "Signal present" : "Mostly noise" });
-    const snr = c.fft && c.fft.noiseRatio < 1 ? (1 - c.fft.noiseRatio) / c.fft.noiseRatio : null;
-    rows.push({ category: "Signal", metric: "SNR", value: fmt(snr, 2), interpretation: snr !== null && snr > 0.5 ? "Decent signal" : "Weak signal" });
-
-    // Stochastic Calculus
-    rows.push({ category: "Stochastic", metric: "GBM Drift (mu)", value: fmt(c.annualizedDrift, 4), interpretation: "Annualized drift rate" });
-    rows.push({ category: "Stochastic", metric: "GBM Vol (sigma)", value: fmtPct(c.annualizedVol !== null ? c.annualizedVol * 100 : null), interpretation: "Annualized volatility" });
-    rows.push({ category: "Stochastic", metric: "Ito Correction", value: fmt(c.gbm?.itoCorrection, 6), interpretation: "Drift adjustment (-0.5 * sigma^2)" });
-
-    // Linear Algebra
-    rows.push({ category: "Lin. Algebra", metric: "PC1 Score", value: fmt(c.pca?.pc1, 3), interpretation: "Primary principal component" });
-    rows.push({ category: "Lin. Algebra", metric: "PC2 Score", value: fmt(c.pca?.pc2, 3), interpretation: "Secondary principal component" });
-    rows.push({ category: "Lin. Algebra", metric: "Variance Explained", value: fmtPct(c.pca?.varianceExplained), interpretation: "Top 2 PCs capture" });
-
-    return rows;
-  }, [computed]);
-
-  // ─── Render ─────────────────────────────────────────────────────────
+  const displayedPrice = feed === "futures" && futuresPrice !== null ? futuresPrice : currentPrice;
 
   return (
     <div className="space-y-6">
-      {/* Section header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-[var(--text)]">Live Mathematical Analysis</h2>
           <p className="text-sm text-[var(--text-muted)]">Real-time price analysis via Coinbase — computing 30+ math features</p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Feed toggle */}
           <div className="flex rounded-lg border border-[var(--border)] overflow-hidden text-xs font-medium">
             <button
               onClick={() => setFeed("spot")}
@@ -364,7 +270,6 @@ export default function LiveMathDashboard() {
         </div>
       </div>
 
-      {/* Row 1: Price + Status */}
       <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
         <div className="flex flex-wrap items-end gap-6">
           <div>
@@ -377,9 +282,8 @@ export default function LiveMathDashboard() {
               )}
             </div>
             <p className="text-4xl font-bold text-[var(--text)] tabular-nums">
-              {feed === "futures" && futuresPrice !== null ? fmtPrice(futuresPrice) : fmtPrice(currentPrice)}
+              {fmtPrice(displayedPrice)}
             </p>
-            {/* Show both prices when both available */}
             {futuresPrice !== null && spotPrice !== null && (
               <div className="flex gap-4 mt-1 text-xs text-[var(--text-muted)]">
                 <span>Spot: {fmtPrice(spotPrice)}</span>
@@ -399,7 +303,7 @@ export default function LiveMathDashboard() {
               <span className="text-xs uppercase tracking-wider">Window</span>
               <p className="font-mono text-[var(--text)]">{prices.length} / 500</p>
             </div>
-            {computed?.cumReturn !== null && computed?.cumReturn !== undefined && (
+            {computed?.cumReturn !== null && (
               <div>
                 <span className="text-xs uppercase tracking-wider">Session Return</span>
                 <p className={`font-mono ${computed.cumReturn >= 0 ? "text-emerald-500" : "text-red-500"}`}>
@@ -411,7 +315,6 @@ export default function LiveMathDashboard() {
         </div>
       </div>
 
-      {/* Collecting state */}
       {!minDataReady && (
         <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-8 animate-in text-center">
           <div className="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
@@ -421,33 +324,34 @@ export default function LiveMathDashboard() {
 
       {minDataReady && computed && (
         <>
-          {/* Row 2: Core Stats Cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <StatCard
+            <MathStatCard
               label="Volatility (ann.)"
-              value={computed.annualizedVol !== null ? fmtPct(computed.annualizedVol * 100) : "--"}
+              value={fmtPct(computed.annualizedVol !== null ? computed.annualizedVol * 100 : null)}
               sub="Annualized from tick data"
-              accent="text-blue-500"
+              icon={Activity}
             />
-            <StatCard
+            <MathStatCard
               label="Hurst Exponent"
               value={fmt(computed.hurst)}
               sub={computed.hurst !== null ? hurstLabel(computed.hurst).label : "--"}
-              accent={computed.hurst !== null ? hurstLabel(computed.hurst).color : "text-[var(--text-muted)]"}
+              icon={Zap}
+              trend={computed.hurst !== null ? hurstLabel(computed.hurst).trend : "neutral"}
             />
-            <StatCard
+            <MathStatCard
               label="Shannon Entropy"
               value={fmt(computed.entropy, 3)}
               sub={computed.predict !== null ? `${fmtPct(computed.predict)} predictable` : "--"}
-              accent="text-cyan-500"
+              icon={Brain}
             />
-            <StatCard
+            <MathStatCard
               label="GBM Drift (mu)"
               value={fmt(computed.annualizedDrift, 4)}
               sub="Annualized drift rate"
-              accent={computed.annualizedDrift !== null && computed.annualizedDrift > 0 ? "text-emerald-500" : "text-red-500"}
+              icon={TrendingUp}
+              trend={computed.annualizedDrift !== null && computed.annualizedDrift > 0 ? "up" : "down"}
             />
-            <StatCard
+            <MathStatCard
               label="Futures Premium"
               value={
                 futuresPrice !== null && spotPrice !== null && spotPrice > 0
@@ -455,95 +359,25 @@ export default function LiveMathDashboard() {
                   : "--"
               }
               sub={futuresPrice !== null ? `BIP ${fmtPrice(futuresPrice)}` : "No futures data"}
-              accent={
-                futuresPrice !== null && spotPrice !== null
-                  ? (futuresPrice - spotPrice) >= 0 ? "text-emerald-500" : "text-red-500"
-                  : "text-[var(--text-muted)]"
-              }
+              icon={BarChart3}
+              trend={futuresPrice !== null && spotPrice !== null ? ((futuresPrice - spotPrice) >= 0 ? "up" : "down") : "neutral"}
             />
           </div>
 
-          {/* Row 3: Price + Return Distribution Charts */}
           <div className="grid md:grid-cols-2 gap-6">
-            <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+            <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6">
               <h3 className="text-sm font-semibold text-[var(--text)] mb-1">Price + SMA(20)</h3>
               <p className="text-xs text-[var(--text-muted)] mb-4">Last {last200.length} ticks</p>
               <Chart option={priceChartOption} height={240} />
             </div>
-            <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+            <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6">
               <h3 className="text-sm font-semibold text-[var(--text)] mb-1">Return Distribution</h3>
               <p className="text-xs text-[var(--text-muted)] mb-4">Log returns histogram</p>
               <Chart option={returnHistOption} height={240} />
             </div>
           </div>
-
-          {/* Row 4: FFT + Rolling Hurst/Entropy */}
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
-              <h3 className="text-sm font-semibold text-[var(--text)] mb-1">FFT Power Spectrum</h3>
-              <p className="text-xs text-[var(--text-muted)] mb-4">Frequency decomposition of returns</p>
-              {computed.fft ? (
-                <Chart option={fftChartOption} height={240} />
-              ) : (
-                <p className="text-[var(--text-muted)] text-sm py-12 text-center">Need 16+ ticks for FFT</p>
-              )}
-            </div>
-            <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
-              <h3 className="text-sm font-semibold text-[var(--text)] mb-1">Rolling Hurst + Entropy</h3>
-              <p className="text-xs text-[var(--text-muted)] mb-4">Tracked over session</p>
-              {history.length >= 2 ? (
-                <Chart option={historyChartOption} height={240} />
-              ) : (
-                <p className="text-[var(--text-muted)] text-sm py-12 text-center">Accumulating history...</p>
-              )}
-            </div>
-          </div>
-
-          {/* Row 5: Full Math Table */}
-          <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
-            <h3 className="text-sm font-semibold text-[var(--text)] mb-4">Complete Mathematical Profile</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--border)]">
-                    <th className="text-left py-2 text-[var(--text-muted)] font-medium w-28">Category</th>
-                    <th className="text-left py-2 text-[var(--text-muted)] font-medium w-40">Metric</th>
-                    <th className="text-right py-2 text-[var(--text-muted)] font-medium w-36">Value</th>
-                    <th className="text-left py-2 text-[var(--text-muted)] font-medium pl-4">Interpretation</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tableRows.map((row, i) => {
-                    const isFirstInCategory = i === 0 || tableRows[i - 1].category !== row.category;
-                    return (
-                      <tr key={`${row.category}-${row.metric}`} className={isFirstInCategory ? "border-t border-[var(--border)]" : ""}>
-                        <td className="py-2 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-                          {isFirstInCategory ? row.category : ""}
-                        </td>
-                        <td className="py-2 font-medium text-[var(--text)]">{row.metric}</td>
-                        <td className="py-2 text-right font-mono text-[var(--text)]">{row.value}</td>
-                        <td className="py-2 pl-4 text-xs text-[var(--text-muted)]">{row.interpretation}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </>
       )}
-    </div>
-  );
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────
-
-function StatCard({ label, value, sub, accent }: { label: string; value: string; sub: string; accent: string }) {
-  return (
-    <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-5 animate-in">
-      <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">{label}</p>
-      <p className={`text-2xl font-bold tabular-nums ${accent}`}>{value}</p>
-      <p className="text-xs text-[var(--text-muted)] mt-1">{sub}</p>
     </div>
   );
 }
