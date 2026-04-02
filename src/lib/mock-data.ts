@@ -19,7 +19,8 @@ export const overviewStats = {
 
 export const equityCurve = Array.from({ length: 90 }, (_, i) => {
   const base = 10000;
-  const noise = Math.sin(i * 0.3) * 150 + Math.random() * 100;
+  // Use stable deterministic noise instead of Math.random()
+  const noise = Math.sin(i * 0.3) * 150 + Math.sin(i * 0.7) * 50;
   const trend = -i * 2.5;
   return {
     date: new Date(2026, 0, 1 + i).toISOString().slice(0, 10),

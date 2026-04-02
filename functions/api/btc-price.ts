@@ -1,8 +1,8 @@
 /**
  * Cloudflare Pages Function: /api/btc-price
  *
- * Fetches BTC nano futures (BIP) price from Coinbase Advanced Trade API
- * using JWT auth with EC keys (ES256) via Web Crypto API.
+ * Fetches BTC futures price from Coinbase Advanced Trade API using JWT auth.
+ * Dynamically selects the next quarterly expiry contract (Mar, Jun, Sep, Dec).
  * Falls back to public spot BTC-USD if keys are missing or futures call fails.
  */
 
@@ -34,6 +34,31 @@ function pemToArrayBuffer(pem: string): ArrayBuffer {
   const buf = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
   return buf.buffer;
+}
+
+/** Determine the next quarterly futures contract expiry (Mar, Jun, Sep, Dec) */
+function getNextQuarterlyContract(): string {
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1; // 1-12
+  const currentYear = now.getFullYear();
+  
+  // Quarterly expirations: March (3), June (6), September (9), December (12)
+  const quarters = [3, 6, 9, 12];
+  
+  // Find the next quarter
+  let expireMonth = quarters.find(q => q > currentMonth);
+  let expireYear = currentYear;
+  
+  if (!expireMonth) {
+    // Current quarter has passed; use first quarter of next year
+    expireMonth = quarters[0];
+    expireYear = currentYear + 1;
+  }
+  
+  const monthStr = String(expireMonth).padStart(2, "0");
+  const yearStr = String(expireYear).slice(-2);
+  
+  return `BTC-USD-${monthStr}${yearStr}`;
 }
 
 // ─── JWT Builder (Web Crypto, ES256) ─────────────────────────────────
@@ -112,13 +137,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       return new Response(JSON.stringify(spot), { headers });
     }
 
-    // Attempt authenticated futures fetch
+    // Attempt authenticated futures fetch with dynamic quarterly contract
     try {
-      const uri = "GET /api/v3/brokerage/market/products/BTC-USD-301220";
+      const product = getNextQuarterlyContract();
+      const uri = `GET /api/v3/brokerage/market/products/${product}`;
       const jwt = await buildJWT(apiKeyId, privateKey, uri);
 
       const res = await fetch(
-        "https://api.coinbase.com/api/v3/brokerage/market/products/BTC-USD-301220",
+        `https://api.coinbase.com/api/v3/brokerage/market/products/${product}`,
         {
           headers: {
             Authorization: `Bearer ${jwt}`,
@@ -136,21 +162,38 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       return new Response(
         JSON.stringify({
           price,
-          product: "BTC-USD-301220",
+          product,
           source: "futures",
           timestamp: new Date().toISOString(),
         }),
         { headers },
       );
-    } catch {
-      // Futures failed — silent fallback to spot
-      const spot = await fetchSpotPrice();
-      return new Response(JSON.stringify(spot), { headers });
+    } catch (err) {
+      // Futures failed — log error and fall back to spot
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[btc-price] Futures fetch failed: ${errorMsg}`);
+      try {
+        const spot = await fetchSpotPrice();
+        return new Response(JSON.stringify(spot), { headers });
+      } catch (spotErr) {
+        const spotErrorMsg = spotErr instanceof Error ? spotErr.message : String(spotErr);
+        console.error(`[btc-price] Spot fallback also failed: ${spotErrorMsg}`);
+        throw spotErr;
+      }
     }
-  } catch {
+  } catch (err) {
     // Everything failed
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[btc-price] All price sources failed: ${errorMsg}`);
     return new Response(
-      JSON.stringify({ price: null, product: null, source: null, timestamp: new Date().toISOString(), error: "unavailable" }),
+      JSON.stringify({
+        price: null,
+        product: null,
+        source: null,
+        timestamp: new Date().toISOString(),
+        error: "unavailable",
+        details: errorMsg,
+      }),
       { status: 502, headers },
     );
   }

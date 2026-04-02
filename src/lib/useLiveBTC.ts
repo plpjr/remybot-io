@@ -95,18 +95,21 @@ export function useLiveBTC(): UseLiveBTCReturn {
 
       ws.onclose = () => {
         if (!mountedRef.current) return;
+        console.warn("[useLiveBTC] WebSocket closed");
         setConnected(false);
         scheduleReconnect();
       };
 
-      ws.onerror = () => {
+      ws.onerror = (event) => {
         if (!mountedRef.current) return;
+        console.error("[useLiveBTC] WebSocket error", event);
         ws.close();
       };
-    } catch {
+    } catch (err) {
+      console.error("[useLiveBTC] WebSocket connection failed", err);
       scheduleReconnect();
     }
-  }, []);
+  }, [];
 
   const scheduleReconnect = useCallback(() => {
     if (!mountedRef.current) return;
@@ -123,9 +126,18 @@ export function useLiveBTC(): UseLiveBTCReturn {
     if (!mountedRef.current) return;
     try {
       const res = await fetch("/api/btc-price");
-      if (!res.ok) return;
+      if (!res.ok) {
+        console.warn(`[useLiveBTC] BTC price API returned ${res.status}`);
+        return;
+      }
       const data = await res.json();
-      if (!data.price || typeof data.price !== "number") return;
+      if (data.error) {
+        console.warn(`[useLiveBTC] BTC price API error: ${data.error}`, data.details);
+      }
+      if (!data.price || typeof data.price !== "number") {
+        console.warn("[useLiveBTC] BTC price API returned no valid price");
+        return;
+      }
 
       if (data.source === "futures") {
         setFuturesPrice(data.price);
@@ -135,8 +147,8 @@ export function useLiveBTC(): UseLiveBTCReturn {
         // API returned spot fallback — don't overwrite WS spot, just note source
         setSource("spot");
       }
-    } catch {
-      // Silent failure — WS spot remains primary
+    } catch (err) {
+      console.error("[useLiveBTC] BTC price fetch failed", err);
     }
   }, []);
 

@@ -1,12 +1,17 @@
 "use client";
 
-type Status = "running" | "stopped" | "error" | string;
+type Status = "running" | "stopped" | "error" | "connecting" | string;
 
 const STATUS_CONFIG: Record<string, { dot: string; badge: string; label: string }> = {
   running: {
     dot: "bg-emerald-500 animate-pulse",
     badge: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800",
     label: "Live",
+  },
+  connecting: {
+    dot: "bg-blue-500 animate-pulse",
+    badge: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800",
+    label: "Connecting...",
   },
   error: {
     dot: "bg-amber-500 animate-pulse",
