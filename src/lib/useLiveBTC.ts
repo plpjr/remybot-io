@@ -11,18 +11,25 @@ export interface PriceTick {
 interface UseLiveBTCReturn {
   prices: PriceTick[];
   currentPrice: number | null;
+  futuresPrice: number | null;
+  spotPrice: number | null;
   connected: boolean;
   tickCount: number;
+  source: "futures" | "spot" | null;
 }
 
 const MAX_WINDOW = 500;
 const WS_URL = "wss://ws-feed.exchange.coinbase.com";
+const FUTURES_POLL_MS = 5_000;
 
 export function useLiveBTC(): UseLiveBTCReturn {
   const [prices, setPrices] = useState<PriceTick[]>([]);
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [connected, setConnected] = useState(false);
   const [tickCount, setTickCount] = useState(0);
+  const [futuresPrice, setFuturesPrice] = useState<number | null>(null);
+  const [spotPrice, setSpotPrice] = useState<number | null>(null);
+  const [source, setSource] = useState<"futures" | "spot" | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
@@ -30,6 +37,9 @@ export function useLiveBTC(): UseLiveBTCReturn {
   const mountedRef = useRef(true);
   const pricesRef = useRef<PriceTick[]>([]);
   const tickCountRef = useRef(0);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ─── WebSocket for real-time spot ticks ────────────────────────────
 
   const connect = useCallback(() => {
     if (!mountedRef.current) return;
@@ -71,7 +81,11 @@ export function useLiveBTC(): UseLiveBTCReturn {
           tickCountRef.current += 1;
 
           // Update state
-          setCurrentPrice(price);
+          setSpotPrice(price);
+          setCurrentPrice((prev) => {
+            // Prefer futures price if available
+            return prev !== null && futuresPrice !== null ? prev : price;
+          });
           setPrices([...updated]);
           setTickCount(tickCountRef.current);
         } catch {
@@ -103,20 +117,48 @@ export function useLiveBTC(): UseLiveBTCReturn {
     }, delay);
   }, [connect]);
 
+  // ─── Polling for futures price via API route ───────────────────────
+
+  const fetchFuturesPrice = useCallback(async () => {
+    if (!mountedRef.current) return;
+    try {
+      const res = await fetch("/api/btc-price");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.price || typeof data.price !== "number") return;
+
+      if (data.source === "futures") {
+        setFuturesPrice(data.price);
+        setCurrentPrice(data.price);
+        setSource("futures");
+      } else {
+        // API returned spot fallback — don't overwrite WS spot, just note source
+        setSource("spot");
+      }
+    } catch {
+      // Silent failure — WS spot remains primary
+    }
+  }, []);
+
+  // ─── Lifecycle ─────────────────────────────────────────────────────
+
   useEffect(() => {
     mountedRef.current = true;
     connect();
+    fetchFuturesPrice();
+    pollTimerRef.current = setInterval(fetchFuturesPrice, FUTURES_POLL_MS);
 
     return () => {
       mountedRef.current = false;
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.onerror = null;
         wsRef.current.close();
       }
     };
-  }, [connect]);
+  }, [connect, fetchFuturesPrice]);
 
-  return { prices, currentPrice, connected, tickCount };
+  return { prices, currentPrice, futuresPrice, spotPrice, connected, tickCount, source };
 }

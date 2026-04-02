@@ -73,7 +73,7 @@ function hurstLabel(h: number): { label: string; color: string } {
 // ─── Component ────────────────────────────────────────────────────────
 
 export default function LiveMathDashboard() {
-  const { prices, currentPrice, connected, tickCount } = useLiveBTC();
+  const { prices, currentPrice, futuresPrice, spotPrice, connected, tickCount, source } = useLiveBTC();
 
   // Debounced computation: recompute every 2 seconds
   const [computed, setComputed] = useState<ComputedMath | null>(null);
@@ -352,7 +352,14 @@ export default function LiveMathDashboard() {
       <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
         <div className="flex flex-wrap items-end gap-6">
           <div>
-            <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">BTC / USD</p>
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">BTC / USD</p>
+              {source === "futures" ? (
+                <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-500">BIP Nano Futures</span>
+              ) : (
+                <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500">BTC/USD Spot</span>
+              )}
+            </div>
             <p className="text-4xl font-bold text-[var(--text)] tabular-nums">{fmtPrice(currentPrice)}</p>
           </div>
           <div className="flex gap-6 text-sm text-[var(--text-muted)]">
@@ -387,7 +394,7 @@ export default function LiveMathDashboard() {
       {minDataReady && computed && (
         <>
           {/* Row 2: Core Stats Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <StatCard
               label="Volatility (ann.)"
               value={computed.annualizedVol !== null ? fmtPct(computed.annualizedVol * 100) : "--"}
@@ -411,6 +418,20 @@ export default function LiveMathDashboard() {
               value={fmt(computed.annualizedDrift, 4)}
               sub="Annualized drift rate"
               accent={computed.annualizedDrift !== null && computed.annualizedDrift > 0 ? "text-emerald-500" : "text-red-500"}
+            />
+            <StatCard
+              label="Futures Premium"
+              value={
+                futuresPrice !== null && spotPrice !== null && spotPrice > 0
+                  ? `${((futuresPrice - spotPrice) / spotPrice * 10000) >= 0 ? "+" : ""}${((futuresPrice - spotPrice) / spotPrice * 10000).toFixed(1)} bps`
+                  : "--"
+              }
+              sub={futuresPrice !== null ? `BIP ${fmtPrice(futuresPrice)}` : "No futures data"}
+              accent={
+                futuresPrice !== null && spotPrice !== null
+                  ? (futuresPrice - spotPrice) >= 0 ? "text-emerald-500" : "text-red-500"
+                  : "text-[var(--text-muted)]"
+              }
             />
           </div>
 
