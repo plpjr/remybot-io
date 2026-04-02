@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useKronosData } from "@/lib/use-data";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
@@ -14,18 +15,35 @@ import {
   Activity,
   Clock,
   LayoutDashboard,
+  AlertCircle,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 
+type TimeRange = "1W" | "1M" | "3M" | "ALL";
+
+const RANGE_DAYS: Record<TimeRange, number | null> = {
+  "1W": 7,
+  "1M": 30,
+  "3M": 90,
+  ALL: null,
+};
+
 export default function OverviewPage() {
-  const { data, loading } = useKronosData();
+  const { data, loading, error } = useKronosData();
   const s = data.overview;
+  const [activeRange, setActiveRange] = useState<TimeRange>("ALL");
 
   if (loading) return (
     <div className="px-6 py-8 max-w-7xl mx-auto">
       <OverviewSkeleton />
     </div>
   );
+
+  // Filter equity curve based on selected time range
+  const days = RANGE_DAYS[activeRange];
+  const filteredCurve = days
+    ? data.equityCurve.slice(-days)
+    : data.equityCurve;
 
   const equityOption: EChartsOption = {
     tooltip: {
@@ -37,7 +55,7 @@ export default function OverviewPage() {
     },
     xAxis: {
       type: "category",
-      data: data.equityCurve.map((d) => d.date.slice(5)),
+      data: filteredCurve.map((d) => d.date.slice(5)),
       boundaryGap: false,
     },
     yAxis: {
@@ -47,7 +65,7 @@ export default function OverviewPage() {
     series: [
       {
         type: "line",
-        data: data.equityCurve.map((d) => d.equity),
+        data: filteredCurve.map((d) => d.equity),
         smooth: false,
         showSymbol: false,
         lineStyle: { width: 2.5 },
@@ -59,6 +77,14 @@ export default function OverviewPage() {
 
   return (
     <div className="px-6 py-8 max-w-7xl mx-auto space-y-8">
+      {/* Error banner */}
+      {error && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-400 animate-in">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span>Could not refresh data: {error}. Showing last known values.</span>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <PageHeader title="Overview" description="Real-time performance dashboard" icon={LayoutDashboard} />
         <div className="flex items-center gap-3">
@@ -125,10 +151,15 @@ export default function OverviewPage() {
             <p className="text-sm text-[var(--text-muted)]">Portfolio value over time (USD)</p>
           </div>
           <div className="flex gap-2">
-            {["1W", "1M", "3M", "ALL"].map((period) => (
+            {(["1W", "1M", "3M", "ALL"] as TimeRange[]).map((period) => (
               <button
                 key={period}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--bg)] text-[var(--text-muted)] hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-950 dark:hover:text-blue-400 transition-colors"
+                onClick={() => setActiveRange(period)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  activeRange === period
+                    ? "bg-blue-600 text-white"
+                    : "bg-[var(--bg)] text-[var(--text-muted)] hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-950 dark:hover:text-blue-400"
+                }`}
               >
                 {period}
               </button>

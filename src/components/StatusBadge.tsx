@@ -1,21 +1,33 @@
 "use client";
 
-export default function StatusBadge({ status }: { status: string }) {
-  const isRunning = status === "running";
+type Status = "running" | "stopped" | "error" | string;
+
+const STATUS_CONFIG: Record<string, { dot: string; badge: string; label: string }> = {
+  running: {
+    dot: "bg-emerald-500 animate-pulse",
+    badge: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800",
+    label: "Live",
+  },
+  error: {
+    dot: "bg-amber-500 animate-pulse",
+    badge: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800",
+    label: "Error",
+  },
+  stopped: {
+    dot: "bg-red-500",
+    badge: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800",
+    label: "Offline",
+  },
+};
+
+export default function StatusBadge({ status }: { status: Status }) {
+  const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.stopped;
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
-        isRunning
-          ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800"
-          : "bg-red-50 text-red-700 border border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800"
-      }`}
+      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${config.badge}`}
     >
-      <span
-        className={`w-2 h-2 rounded-full ${
-          isRunning ? "bg-emerald-500 animate-pulse" : "bg-red-500"
-        }`}
-      />
-      {isRunning ? "Live" : "Offline"}
+      <span className={`w-2 h-2 rounded-full ${config.dot}`} />
+      {config.label}
     </span>
   );
 }
