@@ -6,8 +6,7 @@ interface Env {
 }
 
 const SUPABASE_URL = "https://szxdrpllzngbpiyktipe.supabase.co";
-const ANON_KEY_FALLBACK =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6eGRycGxsem5nYnBpeWt0aXBlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg1NzAxNjEsImV4cCI6MjA3NDE0NjE2MX0.mJ4u8ubBfGKfMgvJciQzYrGCvLKRy7dGw4GHBYQE29k";
+const ANON_KEY_FALLBACK = "sb_publishable_wHuYODk9lkrZxphnjO-OnQ_8AmtwJYf";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
