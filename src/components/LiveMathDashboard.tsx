@@ -99,11 +99,10 @@ export default function LiveMathDashboard() {
   const lastStoreRef = useRef(0);
 
   useEffect(() => {
+    if (prices.length < 2) return;
     const now = Date.now();
-    if (now - lastComputeRef.current < 2000 && computed !== null) return;
-    if (prices.length < 5) return;
+    if (now - lastComputeRef.current < 1000 && computed !== null) return;
     lastComputeRef.current = now;
-    console.log(`[LiveMathDashboard] Computing math for ${prices.length} ticks`);
 
     const priceArr = prices.map((p) => p.price);
     const returns = logReturns(priceArr);
@@ -214,7 +213,7 @@ export default function LiveMathDashboard() {
   const last200 = useMemo(() => priceArr.slice(-200), [priceArr]);
   const sma20Arr = useMemo(() => smaArray(last200, 20), [last200]);
 
-  const minDataReady = prices.length >= 20;
+  const minDataReady = prices.length >= 2;
 
   const priceChartOption: EChartsOption = useMemo(() => ({
     tooltip: { trigger: "axis" },
@@ -375,12 +374,7 @@ export default function LiveMathDashboard() {
         </div>
       )}
 
-      {prices.length > 0 && !minDataReady && (
-        <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-8 animate-in text-center">
-          <div className="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
-          <p className="text-[var(--text-muted)]">Collecting price data... ({prices.length}/20 ticks)</p>
-        </div>
-      )}
+      {/* Removed intermediate "collecting" state — show math as soon as 2 ticks arrive */}
 
       {minDataReady && computed && (
         <>
