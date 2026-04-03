@@ -22,7 +22,8 @@ const MAX_WINDOW = 500;
 const WS_URL = "wss://ws-feed.exchange.coinbase.com";
 const FUTURES_POLL_MS = 5_000;
 const REST_POLL_MS = 3_000;
-const REST_URL = "https://api.exchange.coinbase.com/products/BTC-USD/ticker";
+// Use our own proxy — Brave Shields blocks direct Coinbase requests
+const REST_URL = "/api/btc-price";
 
 export function useLiveBTC(): UseLiveBTCReturn {
   const [prices, setPrices] = useState<PriceTick[]>([]);
@@ -58,27 +59,33 @@ export function useLiveBTC(): UseLiveBTCReturn {
     setTickCount(tickCountRef.current);
   }
 
-  // REST fallback: direct Coinbase REST when WebSocket is blocked
+  // REST fallback: uses our own /api/btc-price proxy (same origin = never blocked by Brave)
   function pollSpotREST() {
     if (!mountedRef.current || wsConnectedRef.current) return;
     fetch(REST_URL)
       .then((res) => {
         if (!res.ok) {
-          console.warn(`[useLiveBTC] REST fallback returned ${res.status}`);
+          console.warn(`[useLiveBTC] REST proxy returned ${res.status}`);
           return null;
         }
         return res.json();
       })
       .then((data) => {
         if (!data || !mountedRef.current) return;
-        const price = parseFloat(data.price);
+        const price = typeof data.price === "number" ? data.price : parseFloat(data.price);
         if (isNaN(price)) return;
-        console.log(`[useLiveBTC] REST fallback: $${price}`);
-        pushTick(price, parseFloat(data.volume || "0"), Date.now());
+        console.log(`[useLiveBTC] REST proxy: $${price} (${data.source || "spot"})`);
+        pushTick(price, 0, Date.now());
         setConnected(true);
+        if (data.source === "futures") {
+          setFuturesPrice(price);
+          setSource("futures");
+        } else {
+          setSource("spot");
+        }
       })
       .catch((err) => {
-        console.warn("[useLiveBTC] REST fallback failed", err);
+        console.warn("[useLiveBTC] REST proxy failed", err);
       });
   }
 
