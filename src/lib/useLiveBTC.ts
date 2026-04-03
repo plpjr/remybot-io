@@ -21,6 +21,8 @@ interface UseLiveBTCReturn {
 const MAX_WINDOW = 500;
 const WS_URL = "wss://ws-feed.exchange.coinbase.com";
 const FUTURES_POLL_MS = 5_000;
+const REST_POLL_MS = 3_000;
+const REST_URL = "https://api.exchange.coinbase.com/products/BTC-USD/ticker";
 
 export function useLiveBTC(): UseLiveBTCReturn {
   const [prices, setPrices] = useState<PriceTick[]>([]);
@@ -52,6 +54,9 @@ export function useLiveBTC(): UseLiveBTCReturn {
         if (!mountedRef.current) { ws.close(); return; }
         setConnected(true);
         retryRef.current = 0;
+        wsConnectedOnceRef.current = true;
+        // Stop REST polling since WS is working
+        if (restPollRef.current) { clearInterval(restPollRef.current); restPollRef.current = null; }
 
         ws.send(JSON.stringify({
           type: "subscribe",
@@ -152,6 +157,36 @@ export function useLiveBTC(): UseLiveBTCReturn {
     }
   }, []);
 
+  // ─── REST fallback when WebSocket is blocked (e.g. Brave Shields) ──
+
+  const restPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wsConnectedOnceRef = useRef(false);
+
+  const pollSpotREST = useCallback(async () => {
+    if (!mountedRef.current || wsConnectedOnceRef.current) return;
+    try {
+      const res = await fetch(REST_URL);
+      if (!res.ok) return;
+      const data = await res.json();
+      const price = parseFloat(data.price);
+      if (isNaN(price)) return;
+
+      const tick: PriceTick = { price, timestamp: Date.now(), volume: parseFloat(data.volume || "0") };
+      const updated = [...pricesRef.current, tick];
+      if (updated.length > MAX_WINDOW) updated.splice(0, updated.length - MAX_WINDOW);
+      pricesRef.current = updated;
+      tickCountRef.current += 1;
+
+      setSpotPrice(price);
+      setCurrentPrice(price);
+      setPrices([...updated]);
+      setTickCount(tickCountRef.current);
+      setConnected(true);
+    } catch {
+      // Silent
+    }
+  }, []);
+
   // ─── Lifecycle ─────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -160,17 +195,31 @@ export function useLiveBTC(): UseLiveBTCReturn {
     fetchFuturesPrice();
     pollTimerRef.current = setInterval(fetchFuturesPrice, FUTURES_POLL_MS);
 
+    // Start REST polling immediately as backup; if WS connects, it will take over
+    pollSpotREST();
+    restPollRef.current = setInterval(pollSpotREST, REST_POLL_MS);
+
+    // After 5s, if WS connected, stop REST polling
+    const wsCheckTimer = setTimeout(() => {
+      if (wsConnectedOnceRef.current && restPollRef.current) {
+        clearInterval(restPollRef.current);
+        restPollRef.current = null;
+      }
+    }, 8000);
+
     return () => {
       mountedRef.current = false;
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      if (restPollRef.current) clearInterval(restPollRef.current);
+      clearTimeout(wsCheckTimer);
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.onerror = null;
         wsRef.current.close();
       }
     };
-  }, [connect, fetchFuturesPrice]);
+  }, [connect, fetchFuturesPrice, pollSpotREST]);
 
   return { prices, currentPrice, futuresPrice, spotPrice, connected, tickCount, source };
 }
