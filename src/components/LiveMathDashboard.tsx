@@ -306,8 +306,8 @@ export default function LiveMathDashboard() {
             {computed?.cumReturn !== null && (
               <div>
                 <span className="text-xs uppercase tracking-wider">Session Return</span>
-                <p className={`font-mono ${computed.cumReturn >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-                  {(computed.cumReturn >= 0 ? "+" : "") + (computed.cumReturn * 100).toFixed(4)}%
+                <p className={`font-mono ${(computed?.cumReturn ?? 0) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                  {((computed?.cumReturn ?? 0) >= 0 ? "+" : "") + ((computed?.cumReturn ?? 0) * 100).toFixed(4)}%
                 </p>
               </div>
             )}

@@ -114,7 +114,7 @@ export function useLiveBTC(): UseLiveBTCReturn {
       console.error("[useLiveBTC] WebSocket connection failed", err);
       scheduleReconnect();
     }
-  }, [];
+  }, []);
 
   const scheduleReconnect = useCallback(() => {
     if (!mountedRef.current) return;
