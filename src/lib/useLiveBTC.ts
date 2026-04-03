@@ -40,11 +40,63 @@ export function useLiveBTC(): UseLiveBTCReturn {
   const pricesRef = useRef<PriceTick[]>([]);
   const tickCountRef = useRef(0);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const restPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wsConnectedRef = useRef(false);
+  const connectRef = useRef<() => void>(() => {});
 
-  // ─── WebSocket for real-time spot ticks ────────────────────────────
+  // Helper: push a new tick into the price buffer and update all state
+  function pushTick(price: number, volume: number, timestamp: number) {
+    const tick: PriceTick = { price, timestamp, volume };
+    const updated = [...pricesRef.current, tick];
+    if (updated.length > MAX_WINDOW) updated.splice(0, updated.length - MAX_WINDOW);
+    pricesRef.current = updated;
+    tickCountRef.current += 1;
 
-  const connect = useCallback(() => {
+    setSpotPrice(price);
+    setCurrentPrice(price);
+    setPrices([...updated]);
+    setTickCount(tickCountRef.current);
+  }
+
+  // REST fallback: direct Coinbase REST when WebSocket is blocked
+  function pollSpotREST() {
+    if (!mountedRef.current || wsConnectedRef.current) return;
+    fetch(REST_URL)
+      .then((res) => {
+        if (!res.ok) {
+          console.warn(`[useLiveBTC] REST fallback returned ${res.status}`);
+          return null;
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (!data || !mountedRef.current) return;
+        const price = parseFloat(data.price);
+        if (isNaN(price)) return;
+        console.log(`[useLiveBTC] REST fallback: $${price}`);
+        pushTick(price, parseFloat(data.volume || "0"), Date.now());
+        setConnected(true);
+      })
+      .catch((err) => {
+        console.warn("[useLiveBTC] REST fallback failed", err);
+      });
+  }
+
+  // Schedule reconnect with exponential backoff
+  function scheduleReconnect() {
     if (!mountedRef.current) return;
+    const delay = Math.min(1000 * Math.pow(2, retryRef.current), 30000);
+    retryRef.current += 1;
+    console.log(`[useLiveBTC] Reconnecting in ${delay}ms (attempt ${retryRef.current})`);
+    retryTimerRef.current = setTimeout(() => {
+      if (mountedRef.current) connectRef.current();
+    }, delay);
+  }
+
+  // WebSocket connection
+  function connect() {
+    if (!mountedRef.current) return;
+    console.log("[useLiveBTC] Attempting WebSocket connection...");
 
     try {
       const ws = new WebSocket(WS_URL);
@@ -52,11 +104,17 @@ export function useLiveBTC(): UseLiveBTCReturn {
 
       ws.onopen = () => {
         if (!mountedRef.current) { ws.close(); return; }
+        console.log("[useLiveBTC] WebSocket connected");
         setConnected(true);
         retryRef.current = 0;
-        wsConnectedOnceRef.current = true;
+        wsConnectedRef.current = true;
+
         // Stop REST polling since WS is working
-        if (restPollRef.current) { clearInterval(restPollRef.current); restPollRef.current = null; }
+        if (restPollRef.current) {
+          console.log("[useLiveBTC] Stopping REST polling (WS active)");
+          clearInterval(restPollRef.current);
+          restPollRef.current = null;
+        }
 
         ws.send(JSON.stringify({
           type: "subscribe",
@@ -76,23 +134,7 @@ export function useLiveBTC(): UseLiveBTCReturn {
           const timestamp = data.time ? new Date(data.time).getTime() : Date.now();
 
           if (isNaN(price)) return;
-
-          const tick: PriceTick = { price, timestamp, volume };
-
-          // Update refs immediately
-          const updated = [...pricesRef.current, tick];
-          if (updated.length > MAX_WINDOW) updated.splice(0, updated.length - MAX_WINDOW);
-          pricesRef.current = updated;
-          tickCountRef.current += 1;
-
-          // Update state
-          setSpotPrice(price);
-          setCurrentPrice((prev) => {
-            // Prefer futures price if available
-            return prev !== null && futuresPrice !== null ? prev : price;
-          });
-          setPrices([...updated]);
-          setTickCount(tickCountRef.current);
+          pushTick(price, volume, timestamp);
         } catch {
           // ignore parse errors
         }
@@ -100,8 +142,16 @@ export function useLiveBTC(): UseLiveBTCReturn {
 
       ws.onclose = () => {
         if (!mountedRef.current) return;
-        console.warn("[useLiveBTC] WebSocket closed");
+        console.warn("[useLiveBTC] WebSocket closed, will reconnect");
         setConnected(false);
+        wsConnectedRef.current = false;
+
+        // Restart REST polling as fallback
+        if (!restPollRef.current && mountedRef.current) {
+          console.log("[useLiveBTC] Restarting REST polling (WS down)");
+          restPollRef.current = setInterval(pollSpotREST, REST_POLL_MS);
+        }
+
         scheduleReconnect();
       };
 
@@ -114,112 +164,77 @@ export function useLiveBTC(): UseLiveBTCReturn {
       console.error("[useLiveBTC] WebSocket connection failed", err);
       scheduleReconnect();
     }
-  }, []);
+  }
 
-  const scheduleReconnect = useCallback(() => {
-    if (!mountedRef.current) return;
-    const delay = Math.min(1000 * Math.pow(2, retryRef.current), 30000);
-    retryRef.current += 1;
-    retryTimerRef.current = setTimeout(() => {
-      if (mountedRef.current) connect();
-    }, delay);
-  }, [connect]);
+  // Keep connect ref up to date for scheduleReconnect
+  connectRef.current = connect;
 
-  // ─── Polling for futures price via API route ───────────────────────
-
+  // Polling for futures price via /api/btc-price
   const fetchFuturesPrice = useCallback(async () => {
     if (!mountedRef.current) return;
     try {
       const res = await fetch("/api/btc-price");
       if (!res.ok) {
-        console.warn(`[useLiveBTC] BTC price API returned ${res.status}`);
+        console.warn(`[useLiveBTC] /api/btc-price returned ${res.status}`);
         return;
       }
       const data = await res.json();
       if (data.error) {
-        console.warn(`[useLiveBTC] BTC price API error: ${data.error}`, data.details);
-      }
-      if (!data.price || typeof data.price !== "number") {
-        console.warn("[useLiveBTC] BTC price API returned no valid price");
+        console.warn(`[useLiveBTC] /api/btc-price error: ${data.error}`, data.details);
         return;
       }
+      if (!data.price || typeof data.price !== "number") {
+        console.warn("[useLiveBTC] /api/btc-price returned no valid price", data);
+        return;
+      }
+
+      console.log(`[useLiveBTC] Futures API: $${data.price} (source: ${data.source})`);
 
       if (data.source === "futures") {
         setFuturesPrice(data.price);
         setCurrentPrice(data.price);
         setSource("futures");
       } else {
-        // API returned spot fallback — don't overwrite WS spot, just note source
+        // Spot fallback from server -- use it if we have nothing
+        setCurrentPrice((prev) => prev ?? data.price);
         setSource("spot");
       }
     } catch (err) {
-      console.error("[useLiveBTC] BTC price fetch failed", err);
+      console.error("[useLiveBTC] /api/btc-price fetch failed", err);
     }
   }, []);
 
-  // ─── REST fallback when WebSocket is blocked (e.g. Brave Shields) ──
-
-  const restPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const wsConnectedOnceRef = useRef(false);
-
-  const pollSpotREST = useCallback(async () => {
-    if (!mountedRef.current || wsConnectedOnceRef.current) return;
-    try {
-      const res = await fetch(REST_URL);
-      if (!res.ok) return;
-      const data = await res.json();
-      const price = parseFloat(data.price);
-      if (isNaN(price)) return;
-
-      const tick: PriceTick = { price, timestamp: Date.now(), volume: parseFloat(data.volume || "0") };
-      const updated = [...pricesRef.current, tick];
-      if (updated.length > MAX_WINDOW) updated.splice(0, updated.length - MAX_WINDOW);
-      pricesRef.current = updated;
-      tickCountRef.current += 1;
-
-      setSpotPrice(price);
-      setCurrentPrice(price);
-      setPrices([...updated]);
-      setTickCount(tickCountRef.current);
-      setConnected(true);
-    } catch {
-      // Silent
-    }
-  }, []);
-
-  // ─── Lifecycle ─────────────────────────────────────────────────────
-
+  // Lifecycle: start everything on mount, clean up on unmount
   useEffect(() => {
     mountedRef.current = true;
+    console.log("[useLiveBTC] Hook mounted, starting data sources...");
+
+    // 1. Start WebSocket
     connect();
+
+    // 2. Start futures price polling via /api/btc-price
     fetchFuturesPrice();
     pollTimerRef.current = setInterval(fetchFuturesPrice, FUTURES_POLL_MS);
 
-    // Start REST polling immediately as backup; if WS connects, it will take over
+    // 3. Start REST polling immediately as backup
+    //    (will self-skip if WS is connected via wsConnectedRef check)
     pollSpotREST();
     restPollRef.current = setInterval(pollSpotREST, REST_POLL_MS);
 
-    // After 5s, if WS connected, stop REST polling
-    const wsCheckTimer = setTimeout(() => {
-      if (wsConnectedOnceRef.current && restPollRef.current) {
-        clearInterval(restPollRef.current);
-        restPollRef.current = null;
-      }
-    }, 8000);
-
     return () => {
+      console.log("[useLiveBTC] Hook unmounting, cleaning up...");
       mountedRef.current = false;
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
       if (restPollRef.current) clearInterval(restPollRef.current);
-      clearTimeout(wsCheckTimer);
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.onerror = null;
         wsRef.current.close();
       }
     };
-  }, [connect, fetchFuturesPrice, pollSpotREST]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return { prices, currentPrice, futuresPrice, spotPrice, connected, tickCount, source };
 }

@@ -102,6 +102,7 @@ export default function LiveMathDashboard() {
     if (now - lastComputeRef.current < 2000 && computed !== null) return;
     if (prices.length < 5) return;
     lastComputeRef.current = now;
+    console.log(`[LiveMathDashboard] Computing math for ${prices.length} ticks`);
 
     const priceArr = prices.map((p) => p.price);
     const returns = logReturns(priceArr);
@@ -156,7 +157,8 @@ export default function LiveMathDashboard() {
         return next.length > 100 ? next.slice(-100) : next;
       });
     }
-  }, [prices, computed]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prices]);
 
   const priceArr = useMemo(() => prices.map((p) => p.price), [prices]);
   const last200 = useMemo(() => priceArr.slice(-200), [priceArr]);
@@ -315,7 +317,15 @@ export default function LiveMathDashboard() {
         </div>
       </div>
 
-      {!minDataReady && (
+      {prices.length === 0 && (
+        <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-8 animate-in text-center">
+          <div className="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
+          <p className="text-[var(--text-muted)]">Waiting for price data...</p>
+          <p className="text-xs text-[var(--text-muted)] mt-2 opacity-60">Connecting to Coinbase WebSocket + REST fallback</p>
+        </div>
+      )}
+
+      {prices.length > 0 && !minDataReady && (
         <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-8 animate-in text-center">
           <div className="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
           <p className="text-[var(--text-muted)]">Collecting price data... ({prices.length}/20 ticks)</p>
