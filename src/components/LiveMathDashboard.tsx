@@ -96,6 +96,7 @@ export default function LiveMathDashboard() {
   const [computed, setComputed] = useState<ComputedMath | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const lastComputeRef = useRef(0);
+  const lastStoreRef = useRef(0);
 
   useEffect(() => {
     const now = Date.now();
@@ -159,6 +160,55 @@ export default function LiveMathDashboard() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prices]);
+
+  // Store to Supabase every 60 seconds
+  useEffect(() => {
+    if (!computed || !currentPrice) return;
+    const now = Date.now();
+    if (now - lastStoreRef.current < 60_000) return;
+    lastStoreRef.current = now;
+
+    fetch("/api/store-math", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        price: currentPrice,
+        source: feed,
+        volatility_ann: computed.annualizedVol,
+        mean_return: computed.stats?.mean,
+        std_dev: computed.stats?.stdDev,
+        skewness: computed.stats?.skewness,
+        kurtosis: computed.stats?.kurtosis,
+        z_score: computed.stats?.zScore,
+        autocorr_1: computed.autocorr1,
+        rate_of_change: computed.roc,
+        acceleration: computed.accel,
+        cumulative_return: computed.cumReturn,
+        shannon_entropy: computed.entropy,
+        predictability: computed.predict,
+        hurst_exponent: computed.hurst,
+        fractal_dimension: computed.hurst !== null ? 2 - computed.hurst : null,
+        dominant_cycle: computed.fft?.dominantPeriod,
+        spectral_entropy: computed.fft?.spectralEntropy,
+        noise_ratio: computed.fft?.noiseRatio,
+        gbm_drift: computed.annualizedDrift,
+        gbm_vol: computed.annualizedVol,
+        ito_correction: computed.gbm?.itoCorrection,
+        pc1_score: computed.pca?.pc1,
+        pc2_score: computed.pca?.pc2,
+        variance_explained: computed.pca?.varianceExplained,
+        sma_20: computed.sma20,
+        sma_50: computed.sma50,
+        ema_20: computed.ema20,
+        tick_count: tickCount,
+        window_size: prices.length,
+      }),
+    }).then(r => {
+      if (r.ok) console.log("[LiveMath] Stored to Supabase");
+      else console.warn("[LiveMath] Store failed:", r.status);
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [computed, currentPrice, feed, tickCount, prices.length]);
 
   const priceArr = useMemo(() => prices.map((p) => p.price), [prices]);
   const last200 = useMemo(() => priceArr.slice(-200), [priceArr]);
