@@ -97,6 +97,27 @@ export default function LiveMathDashboard() {
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const lastComputeRef = useRef(0);
   const lastStoreRef = useRef(0);
+  const [lastKnownPrice, setLastKnownPrice] = useState<number | null>(null);
+  const [lastKnownComputed, setLastKnownComputed] = useState<Record<string, number | null> | null>(null);
+  const loadedFromDbRef = useRef(false);
+
+  // Load last stored math features from Supabase on mount
+  useEffect(() => {
+    if (loadedFromDbRef.current) return;
+    loadedFromDbRef.current = true;
+    fetch("https://szxdrpllzngbpiyktipe.supabase.co/rest/v1/live_math_features?select=*&order=ts.desc&limit=1", {
+      headers: { apikey: "sb_publishable_wHuYODk9lkrZxphnjO-OnQ_8AmtwJYf" },
+    })
+      .then((r) => r.json())
+      .then((rows) => {
+        if (!Array.isArray(rows) || rows.length === 0) return;
+        const row = rows[0];
+        console.log("[LiveMath] Loaded last stored features from Supabase", row);
+        setLastKnownPrice(Number(row.price));
+        setLastKnownComputed(row);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (prices.length < 2) return;
@@ -292,7 +313,7 @@ export default function LiveMathDashboard() {
     };
   }, [history]);
 
-  const displayedPrice = feed === "futures" && futuresPrice !== null ? futuresPrice : currentPrice;
+  const displayedPrice = feed === "futures" && futuresPrice !== null ? futuresPrice : (currentPrice ?? lastKnownPrice);
 
   return (
     <div className="space-y-6">
@@ -366,7 +387,7 @@ export default function LiveMathDashboard() {
         </div>
       </div>
 
-      {prices.length === 0 && (
+      {prices.length === 0 && !lastKnownComputed && (
         <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-8 animate-in text-center">
           <div className="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
           <p className="text-[var(--text-muted)]">Waiting for price data...</p>
@@ -374,36 +395,42 @@ export default function LiveMathDashboard() {
         </div>
       )}
 
-      {/* Removed intermediate "collecting" state — show math as soon as 2 ticks arrive */}
-
-      {minDataReady && computed && (
-        <>
+      {(computed || lastKnownComputed) && (() => {
+        // Use live computed if available, otherwise fall back to last known from Supabase
+        const vol = computed?.annualizedVol ?? (lastKnownComputed?.volatility_ann != null ? Number(lastKnownComputed.volatility_ann) : null);
+        const hurst = computed?.hurst ?? (lastKnownComputed?.hurst_exponent != null ? Number(lastKnownComputed.hurst_exponent) : null);
+        const entropy = computed?.entropy ?? (lastKnownComputed?.shannon_entropy != null ? Number(lastKnownComputed.shannon_entropy) : null);
+        const predict = computed?.predict ?? (lastKnownComputed?.predictability != null ? Number(lastKnownComputed.predictability) : null);
+        const drift = computed?.annualizedDrift ?? (lastKnownComputed?.gbm_drift != null ? Number(lastKnownComputed.gbm_drift) : null);
+        const isLive = computed !== null;
+        return <>
+          {!isLive && <p className="text-xs text-amber-500 text-center">Showing last stored values — live data connecting...</p>}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <MathStatCard
               label="Volatility (ann.)"
-              value={fmtPct(computed.annualizedVol !== null ? computed.annualizedVol * 100 : null)}
+              value={fmtPct(vol !== null ? vol * 100 : null)}
               sub="Annualized from tick data"
               icon={Activity}
             />
             <MathStatCard
               label="Hurst Exponent"
-              value={fmt(computed.hurst)}
-              sub={computed.hurst !== null ? hurstLabel(computed.hurst).label : "--"}
+              value={fmt(hurst)}
+              sub={hurst !== null ? hurstLabel(hurst).label : "--"}
               icon={Zap}
-              trend={computed.hurst !== null ? hurstLabel(computed.hurst).trend : "neutral"}
+              trend={hurst !== null ? hurstLabel(hurst).trend : "neutral"}
             />
             <MathStatCard
               label="Shannon Entropy"
-              value={fmt(computed.entropy, 3)}
-              sub={computed.predict !== null ? `${fmtPct(computed.predict)} predictable` : "--"}
+              value={fmt(entropy, 3)}
+              sub={predict !== null ? `${fmtPct(predict)} predictable` : "--"}
               icon={Brain}
             />
             <MathStatCard
               label="GBM Drift (mu)"
-              value={fmt(computed.annualizedDrift, 4)}
+              value={fmt(drift, 4)}
               sub="Annualized drift rate"
               icon={TrendingUp}
-              trend={computed.annualizedDrift !== null && computed.annualizedDrift > 0 ? "up" : "down"}
+              trend={drift !== null && drift > 0 ? "up" : "down"}
             />
             <MathStatCard
               label="Futures Premium"
@@ -431,7 +458,7 @@ export default function LiveMathDashboard() {
             </div>
           </div>
         </>
-      )}
+      })()}
     </div>
   );
 }
