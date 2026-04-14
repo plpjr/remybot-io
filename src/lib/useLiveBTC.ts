@@ -74,7 +74,6 @@ export function useLiveBTC(): UseLiveBTCReturn {
         if (!data || !mountedRef.current) return;
         const price = typeof data.price === "number" ? data.price : parseFloat(data.price);
         if (isNaN(price)) return;
-        console.log(`[useLiveBTC] REST proxy: $${price} (${data.source || "spot"})`);
         pushTick(price, 0, Date.now());
         setConnected(true);
         if (data.source === "futures") {
@@ -94,7 +93,6 @@ export function useLiveBTC(): UseLiveBTCReturn {
     if (!mountedRef.current) return;
     const delay = Math.min(1000 * Math.pow(2, retryRef.current), 30000);
     retryRef.current += 1;
-    console.log(`[useLiveBTC] Reconnecting in ${delay}ms (attempt ${retryRef.current})`);
     retryTimerRef.current = setTimeout(() => {
       if (mountedRef.current) connectRef.current();
     }, delay);
@@ -103,7 +101,6 @@ export function useLiveBTC(): UseLiveBTCReturn {
   // WebSocket connection
   function connect() {
     if (!mountedRef.current) return;
-    console.log("[useLiveBTC] Attempting WebSocket connection...");
 
     try {
       const ws = new WebSocket(WS_URL);
@@ -111,14 +108,12 @@ export function useLiveBTC(): UseLiveBTCReturn {
 
       ws.onopen = () => {
         if (!mountedRef.current) { ws.close(); return; }
-        console.log("[useLiveBTC] WebSocket connected");
         setConnected(true);
         retryRef.current = 0;
         wsConnectedRef.current = true;
 
         // Stop REST polling since WS is working
         if (restPollRef.current) {
-          console.log("[useLiveBTC] Stopping REST polling (WS active)");
           clearInterval(restPollRef.current);
           restPollRef.current = null;
         }
@@ -155,7 +150,6 @@ export function useLiveBTC(): UseLiveBTCReturn {
 
         // Restart REST polling as fallback
         if (!restPollRef.current && mountedRef.current) {
-          console.log("[useLiveBTC] Restarting REST polling (WS down)");
           restPollRef.current = setInterval(pollSpotREST, REST_POLL_MS);
         }
 
@@ -195,7 +189,6 @@ export function useLiveBTC(): UseLiveBTCReturn {
         return;
       }
 
-      console.log(`[useLiveBTC] Futures API: $${data.price} (source: ${data.source})`);
 
       if (data.source === "futures") {
         setFuturesPrice(data.price);
@@ -214,7 +207,6 @@ export function useLiveBTC(): UseLiveBTCReturn {
   // Lifecycle: start everything on mount, clean up on unmount
   useEffect(() => {
     mountedRef.current = true;
-    console.log("[useLiveBTC] Hook mounted, starting data sources...");
 
     // 1. Start WebSocket
     connect();
@@ -229,7 +221,6 @@ export function useLiveBTC(): UseLiveBTCReturn {
     restPollRef.current = setInterval(pollSpotREST, REST_POLL_MS);
 
     return () => {
-      console.log("[useLiveBTC] Hook unmounting, cleaning up...");
       mountedRef.current = false;
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);

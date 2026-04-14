@@ -120,11 +120,20 @@ async function fetchSpotPrice(): Promise<{ price: number; product: string; sourc
 
 // ─── Handler ─────────────────────────────────────────────────────────
 
+const ALLOWED_ORIGINS = new Set([
+  "https://remybot.io",
+  "https://www.remybot.io",
+  "http://localhost:3000",
+]);
+
 export const onRequestGet: PagesFunction<Env> = async (context) => {
+  const reqOrigin = context.request.headers.get("Origin") ?? "";
+  const allowedOrigin = ALLOWED_ORIGINS.has(reqOrigin) ? reqOrigin : "https://remybot.io";
   const headers = {
     "Content-Type": "application/json",
     "Cache-Control": "no-cache",
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Vary": "Origin",
   };
 
   try {

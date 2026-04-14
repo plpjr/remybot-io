@@ -112,7 +112,6 @@ export default function LiveMathDashboard() {
       .then((rows) => {
         if (!Array.isArray(rows) || rows.length === 0) return;
         const row = rows[0];
-        console.log("[LiveMath] Loaded last stored features from Supabase", row);
         setLastKnownPrice(Number(row.price));
         setLastKnownComputed(row);
       })
@@ -224,8 +223,7 @@ export default function LiveMathDashboard() {
         window_size: prices.length,
       }),
     }).then(r => {
-      if (r.ok) console.log("[LiveMath] Stored to Supabase");
-      else console.warn("[LiveMath] Store failed:", r.status);
+      if (!r.ok) console.warn("[LiveMath] Store failed:", r.status);
     }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [computed, currentPrice, feed, tickCount, prices.length]);
