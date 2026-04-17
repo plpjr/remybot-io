@@ -116,3 +116,29 @@ first. The short version: MaskablePPO RL was abandoned at 40% WR;
 replaced with Chronos (98% range prediction) + Kronos (entry timing) +
 meta-learner. Every RL-era page / metric / copy string in this repo
 is either gone or being phased out.
+
+## The integration contract
+
+The single source of truth for what this dashboard reads vs what the
+bot writes:
+
+- `/Users/plpjr/Documents/freqtrade-bot/docs/data-contract.md` — every
+  Supabase table + column, `/healthz` shape, env var names, evolution
+  rules, deploy ordering for breaking changes
+- `/Users/plpjr/Documents/freqtrade-bot/docs/troubleshooting-integration.md`
+  — when the dashboard shows wrong data or "Unreachable," start here
+- `/Users/plpjr/Documents/freqtrade-bot/tests/test_data_contract_drift.py`
+  — parses both repos and asserts the contract holds. Run it before
+  you change `src/lib/data.ts` or `src/lib/useBotHealth.ts`
+  interfaces; run it on the bot side before changing
+  `trading/trade_logger.py` or `/healthz` shape.
+
+Hard rules across the boundary:
+
+1. **This repo must tolerate old + new shapes during a breaking
+   change** — the dashboard PR ALWAYS ships before the bot PR.
+2. **Never hardcode Supabase anon key or URL in source** — env vars
+   only, with the null-object fallback in `src/lib/supabase.ts`.
+3. **`/api/healthz` must preserve the bot's HTTP status code** —
+   503 on tick-feed crash is a semantic signal uptime monitors
+   depend on. Don't silently convert to 200.
