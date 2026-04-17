@@ -1,17 +1,25 @@
-# Kronos — AI-Powered BTC Trading Bot Dashboard
+# Kronos — BTC Range-Prediction Trading Dashboard
 
-**Kronos** is a live performance dashboard for an autonomous Bitcoin trading bot trained with Proximal Policy Optimisation (PPO) reinforcement learning. The dashboard provides real-time visibility into trading performance, model diagnostics, risk metrics, and ongoing research experiments.
+**Kronos** is the live performance dashboard for an autonomous Bitcoin
+trading bot built around **Chronos** (zero-shot range prediction, ~98%
+band-accuracy) and **Kronos** (fine-tuned entry-timing model), with a
+meta-learner filtering weak signals before execution. The dashboard
+provides real-time visibility into bot health, paper-trade performance,
+model diagnostics, risk metrics, and ongoing research.
+
+The previous RL (MaskablePPO) approach was abandoned at ~40% win rate;
+some pre-pivot research pages retain historical context.
 
 ## Features
 
 | Section | Description |
 |---|---|
-| **Overview** | Real-time equity curve, win rate, Sharpe ratio, and rolling returns |
-| **Trading** | Microstructure analysis, daily/weekly PnL, trade duration, and hourly performance |
-| **Risk** | Drawdown curve, consecutive loss distribution, Sortino/Calmar ratios, and VaR |
-| **Model** | Training reward curve, IS vs OOS comparison, action/confidence distributions, and feature importance |
-| **Analysis** | Volatility regime detection, BTC correlation, and volume regime charts |
-| **Autoresearch** | Live hyperparameter sweep leaderboard and experiment comparison |
+| **Overview** | Live bot health (/healthz proxy), equity curve, win rate, rolling returns |
+| **Trading** | Daily/weekly PnL, trade duration, hourly performance |
+| **Risk** | Drawdown curve, consecutive loss distribution, Sortino/Calmar/VaR |
+| **Model** | IS vs OOS comparison, action/confidence distributions, feature importance |
+| **Analysis** | Volatility regime detection, BTC correlation, volume regime charts |
+| **Autoresearch** | Hyperparameter sweep leaderboard (retained from pre-pivot era) |
 
 ## Tech Stack
 
@@ -36,30 +44,43 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### Environment Variables
 
-Create a `.env.local` file at the project root with the following variables:
+See `.env.example` for the full list. At minimum:
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-For the BTC futures price API (Cloudflare Pages Function), set these in your Cloudflare Pages environment:
+For server-side Cloudflare Pages Functions (only in CF env, not in `.env.local`):
 
 ```
+KRONOS_HEALTHZ_URL=https://bot.example.com/healthz   # via Tailscale / CF Access
 COINBASE_API_KEY_ID=your_coinbase_api_key_id
 COINBASE_API_PRIVATE_KEY=your_coinbase_ec_private_key
 ```
+
+The dashboard degrades gracefully when env vars are missing: `supabase.ts`
+exports a null-object client so pages render from mock fallback rather
+than crashing, and `/api/healthz` returns an "unreachable" status so
+`BotHealthCard` surfaces the misconfiguration clearly.
 
 ## Project Structure
 
 ```
 src/
-  app/          # Next.js App Router pages (overview, trading, risk, model, analysis, autoresearch)
-  components/   # Shared UI components (Sidebar, StatCard, Chart, ThemeProvider, …)
-  lib/          # Data fetching, Supabase client, hooks, mock data, ECharts themes
+  app/          # Next.js App Router pages + error/global-error/not-found
+  components/   # Sidebar, StatCard, Chart, ThemeProvider, BotHealthCard, …
+  lib/          # data.ts (Supabase queries), useBotHealth.ts, supabase.ts, mock-data.ts, echarts-theme.ts
 functions/
-  api/          # Cloudflare Pages Functions (btc-price.ts)
+  api/          # Cloudflare Pages Functions
+    btc-price.ts    # BTC futures (auth'd) with spot fallback
+    healthz.ts      # Proxies the bot's /healthz through a Tailscale / CF Access tunnel
+    store-math.ts   # LiveMathDashboard write path
+docs/
+  audit-2026-04-16.md   # Technical audit (Next 16 + WCAG 2.2 AA)
 ```
+
+See `CLAUDE.md` for a deeper orientation doc.
 
 ## Deployment
 

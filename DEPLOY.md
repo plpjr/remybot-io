@@ -61,6 +61,12 @@ per-environment.
 | `SUPABASE_ANON_KEY` | Server functions (store-math) write key | Server functions |
 | `COINBASE_API_KEY_ID` | Futures price proxy auth | Server functions |
 | `COINBASE_API_PRIVATE_KEY` | Futures price proxy auth (PEM) | Server functions |
+| `KRONOS_HEALTHZ_URL` | Bot /healthz URL for `/api/healthz` proxy (Tailscale / CF Access) | Server functions |
+
+**Security note on `KRONOS_HEALTHZ_URL`:** the bot's `/healthz` binds to
+127.0.0.1 on the VPS by design. Expose it to this function via Tailscale
+or Cloudflare Access, never via the public internet — the response
+includes open-position details (side, entry, stop, TP) and balance.
 
 ### Staging / Preview
 
@@ -103,5 +109,10 @@ Before merging anything to `main`:
 2. Check Cloudflare → Analytics → spike in 4xx/5xx
 3. Check browser console on a real visit (DevTools → Console)
 4. Verify `/api/btc-price` returns 200 with real price data
-5. If LiveMathDashboard is on the page, verify `/api/store-math` is inserting
+5. **Verify `/api/healthz` mirrors the bot's status** — should return 200
+   `{status:"ok"|"degraded"}` when bot is up, 503 `{status:"error"|"unreachable"}`
+   when bot is down or `KRONOS_HEALTHZ_URL` is misconfigured. This is the
+   endpoint `BotHealthCard` polls every 15 s; uptime monitors should
+   alert on 503 here.
+6. If LiveMathDashboard is on the page, verify `/api/store-math` is inserting
    (Supabase → `live_math_features` table → recent rows)
