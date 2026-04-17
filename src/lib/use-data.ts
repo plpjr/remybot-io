@@ -145,22 +145,28 @@ export function useKronosData() {
     // 60s polling fallback
     const interval = setInterval(refresh, 60_000);
 
-    // Supabase Realtime subscriptions
+    // Supabase Realtime subscriptions against the current bot schema.
+    // See freqtrade-bot/trading/trade_logger.py for the writer side.
     const channel = supabase
       .channel("kronos-realtime")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "market_microstructure" },
+        { event: "INSERT", schema: "public", table: "kronos_trades" },
         () => { refresh(); }
       )
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "trade_journal" },
+        { event: "INSERT", schema: "public", table: "kronos_signals" },
         () => { refresh(); }
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "bot_heartbeat" },
+        { event: "INSERT", schema: "public", table: "kronos_predictions" },
+        () => { refresh(); }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "kronos_bot_status" },
         () => { refresh(); }
       )
       .subscribe();

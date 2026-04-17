@@ -1,55 +1,47 @@
-// Mock data for the dashboard -- will be replaced with Supabase queries
+/**
+ * Mock data for the dashboard.
+ *
+ * Purpose: keep the dashboard renderable in local dev or when Supabase
+ * env vars are unset. Production must never ship with these values
+ * confused for real stats — the shape mirrors the live interfaces, the
+ * numbers are honest zeros where live PnL matters.
+ *
+ * Historical stats (weeklyImprovements, experimentLeaderboard) keep
+ * their real autoresearch-era values so /autoresearch + /analysis keep
+ * showing evidence of the pre-pivot work when no live replacement
+ * exists yet.
+ */
 
 export const overviewStats = {
-  totalReturn: -2.1,
-  totalReturnMonth: -0.4,
-  totalReturnWeek: 0.1,
-  winRate: 40.3,
-  avgPnlBps: -1.8,
-  sharpeRatio: 0.42,
-  maxDrawdown: -8.7,
-  totalTrades: 312,
-  profitFactor: 0.91,
-  avgTradesPerDay: 3.4,
-  modelVersion: "v8-PPO",
-  lastTrained: "2026-03-28",
+  totalReturn: 0,
+  totalReturnMonth: 0,
+  totalReturnWeek: 0,
+  winRate: 0,
+  avgPnlBps: 0,
+  sharpeRatio: 0,
+  maxDrawdown: 0,
+  totalTrades: 0,
+  profitFactor: 0,
+  avgTradesPerDay: 0,
+  modelVersion: "chronos+kronos",
+  lastTrained: "—",
   status: "stopped" as "running" | "stopped" | "error",
   uptime: "—",
 };
 
-export const equityCurve = Array.from({ length: 90 }, (_, i) => {
-  const base = 10000;
-  // Use stable deterministic noise instead of Math.random()
-  const noise = Math.sin(i * 0.3) * 150 + Math.sin(i * 0.7) * 50;
-  const trend = -i * 2.5;
-  return {
-    date: new Date(2026, 0, 1 + i).toISOString().slice(0, 10),
-    equity: Math.round(base + trend + noise),
-  };
-});
+// Empty equity curve — real data populates once paper trading starts.
+// Home page renders empty-state when this is empty.
+export const equityCurve: { date: string; equity: number }[] = [];
 
-export const monthlyReturns = [
-  { month: "Jan", return: -1.2 },
-  { month: "Feb", return: -0.5 },
-  { month: "Mar", return: -0.4 },
-  { month: "Apr", return: 0 },
-  { month: "May", return: 0 },
-  { month: "Jun", return: 0 },
-  { month: "Jul", return: 0 },
-  { month: "Aug", return: 0 },
-  { month: "Sep", return: 0 },
-  { month: "Oct", return: 0 },
-  { month: "Nov", return: 0 },
-  { month: "Dec", return: 0 },
-];
+export const monthlyReturns: { month: string; return: number }[] = [];
 
 export const longShortBreakdown = {
-  longWinRate: 42.1,
-  shortWinRate: 38.0,
-  longTrades: 178,
-  shortTrades: 134,
-  longAvgPnl: -1.2,
-  shortAvgPnl: -2.6,
+  longWinRate: 0,
+  shortWinRate: 0,
+  longTrades: 0,
+  shortTrades: 0,
+  longAvgPnl: 0,
+  shortAvgPnl: 0,
 };
 
 export const weeklyImprovements = [
@@ -98,10 +90,10 @@ export const skillRadar = [
 ];
 
 export const recentPerformance = [
-  { period: "Today", pnl: 0.0, trades: 0, winRate: 0 },
-  { period: "This Week", pnl: 0.1, trades: 8, winRate: 37.5 },
-  { period: "This Month", pnl: -0.4, trades: 94, winRate: 39.4 },
-  { period: "All Time", pnl: -2.1, trades: 312, winRate: 40.3 },
+  { period: "Today", pnl: 0, trades: 0, winRate: 0 },
+  { period: "This Week", pnl: 0, trades: 0, winRate: 0 },
+  { period: "This Month", pnl: 0, trades: 0, winRate: 0 },
+  { period: "All Time", pnl: 0, trades: 0, winRate: 0 },
 ];
 
 // ===== TRADING PAGE DATA =====
