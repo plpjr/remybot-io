@@ -7,13 +7,13 @@ import StatusBadge from "@/components/StatusBadge";
 import { OverviewSkeleton } from "@/components/Skeleton";
 import Chart from "@/components/Chart";
 import type { EChartsOption } from "@/components/Chart";
+import BotHealthCard from "@/components/BotHealthCard";
 import {
   TrendingUp,
   Target,
   BarChart3,
   Shield,
   Activity,
-  Clock,
   LayoutDashboard,
   AlertCircle,
 } from "lucide-react";
@@ -150,56 +150,74 @@ export default function OverviewPage() {
             <h2 className="text-lg font-semibold text-[var(--text)]">Equity Curve</h2>
             <p className="text-sm text-[var(--text-muted)]">Portfolio value over time (USD)</p>
           </div>
-          <div className="flex gap-2">
-            {(["1W", "1M", "3M", "ALL"] as TimeRange[]).map((period) => (
-              <button
-                key={period}
-                onClick={() => setActiveRange(period)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                  activeRange === period
-                    ? "bg-blue-600 text-white"
-                    : "bg-[var(--bg)] text-[var(--text-muted)] hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-950 dark:hover:text-blue-400"
-                }`}
-              >
-                {period}
-              </button>
-            ))}
-          </div>
+          {filteredCurve.length > 0 && (
+            <div className="flex gap-2" role="group" aria-label="Equity curve time range">
+              {(["1W", "1M", "3M", "ALL"] as TimeRange[]).map((period) => (
+                <button
+                  key={period}
+                  type="button"
+                  onClick={() => setActiveRange(period)}
+                  aria-pressed={activeRange === period}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2 ${
+                    activeRange === period
+                      ? "bg-blue-600 text-white"
+                      : "bg-[var(--bg)] text-[var(--text-muted)] hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-950 dark:hover:text-blue-400"
+                  }`}
+                >
+                  {period}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <Chart option={equityOption} height={320} />
+        {filteredCurve.length > 0 ? (
+          <Chart option={equityOption} height={320} />
+        ) : (
+          <div className="py-16 text-center">
+            <BarChart3 className="w-10 h-10 text-[var(--text-muted)] opacity-30 mx-auto mb-3" aria-hidden="true" />
+            <p className="text-sm text-[var(--text-muted)]">
+              No closed trades yet. The equity curve populates from
+              paper-trade PnL as the bot runs.
+            </p>
+          </div>
+        )}
       </section>
 
-      {/* Recent Performance */}
-      <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
-        <h2 className="text-lg font-semibold text-[var(--text)] mb-1">Recent Performance</h2>
-        <p className="text-sm text-[var(--text-muted)] mb-6">Rolling returns</p>
-        <div className="space-y-4">
-          {data.recentPerformance.map((r) => (
-            <div key={r.period} className="flex items-center justify-between py-3 border-b border-[var(--border)] last:border-0">
-              <div>
-                <p className="font-medium text-[var(--text)]">{r.period}</p>
-                <p className="text-xs text-[var(--text-muted)]">{r.trades} trades · {r.winRate}% WR</p>
-              </div>
-              <span className={`text-lg font-bold ${r.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
-                {r.pnl >= 0 ? "+" : ""}{r.pnl}%
-              </span>
+      {/* Recent Performance + live Bot Health */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <section className="lg:col-span-2 bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+          <h2 className="text-lg font-semibold text-[var(--text)] mb-1">Recent Performance</h2>
+          <p className="text-sm text-[var(--text-muted)] mb-6">Rolling returns</p>
+          {data.recentPerformance.every((r) => r.trades === 0) ? (
+            <div className="py-8 text-center">
+              <Activity className="w-8 h-8 text-[var(--text-muted)] opacity-40 mx-auto mb-3" aria-hidden="true" />
+              <p className="text-sm text-[var(--text-muted)]">
+                No closed trades yet. Paper-trade run hasn&apos;t started.
+              </p>
+              <p className="text-xs text-[var(--text-muted)] opacity-70 mt-1">
+                Stats appear here within ~5 minutes of the first closed trade.
+              </p>
             </div>
-          ))}
-        </div>
-        <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-950 rounded-xl border border-blue-100 dark:border-blue-900">
-          <div className="flex items-center gap-2 mb-1">
-            <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <span className="text-sm font-medium text-blue-900 dark:text-blue-300">Bot Status</span>
-          </div>
-          <p className="text-2xl font-bold text-blue-800 dark:text-blue-200">
-            {s.status === "running" ? s.uptime : "Offline"}
-          </p>
-          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">Model: {s.modelVersion}</p>
-          <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 opacity-70">
-            {s.status === "running" ? "✓ Data is live" : "⚠ Data may be stale"}
-          </p>
-        </div>
-      </section>
+          ) : (
+            <div className="space-y-4">
+              {data.recentPerformance.map((r) => (
+                <div key={r.period} className="flex items-center justify-between py-3 border-b border-[var(--border)] last:border-0">
+                  <div>
+                    <p className="font-medium text-[var(--text)]">{r.period}</p>
+                    <p className="text-xs text-[var(--text-muted)]">{r.trades} trades · {r.winRate}% WR</p>
+                  </div>
+                  <span className={`text-lg font-bold tabular-nums ${r.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
+                    {r.pnl >= 0 ? "+" : ""}{r.pnl}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Live bot health via /api/healthz — Phase 3 integration */}
+        <BotHealthCard />
+      </div>
 
       {/* Footer */}
       <footer className="text-center py-8 border-t border-[var(--border)]">
