@@ -35,10 +35,14 @@ export default function Sidebar() {
     <>
       {/* Mobile hamburger */}
       <button
+        type="button"
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-[var(--card)] border border-[var(--border)] rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] shadow-sm transition-colors"
+        aria-label="Open navigation"
+        aria-expanded={mobileOpen}
+        aria-controls="kronos-sidebar"
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-[var(--card)] border border-[var(--border)] rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] shadow-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2"
       >
-        <Menu className="w-5 h-5" />
+        <Menu className="w-5 h-5" aria-hidden="true" />
       </button>
 
       {/* Mobile overlay */}
@@ -46,11 +50,14 @@ export default function Sidebar() {
         <div
           className="lg:hidden fixed inset-0 bg-black/20 dark:bg-black/50 z-40"
           onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
         />
       )}
 
       {/* Sidebar */}
       <aside
+        id="kronos-sidebar"
+        aria-label="Primary"
         className={`fixed top-0 left-0 h-full w-64 bg-[var(--card)] border-r border-[var(--border)] z-50 flex flex-col transition-transform duration-200 shadow-sm ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         } lg:translate-x-0`}
@@ -58,7 +65,10 @@ export default function Sidebar() {
         {/* Logo */}
         <div className="px-6 py-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center">
+            <div
+              className="w-9 h-9 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center"
+              aria-hidden="true"
+            >
               <Brain className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -67,24 +77,26 @@ export default function Sidebar() {
             </div>
           </div>
           <button
+            type="button"
             onClick={() => setMobileOpen(false)}
-            className="lg:hidden text-[var(--text-muted)] hover:text-[var(--text)]"
+            aria-label="Close navigation"
+            className="lg:hidden text-[var(--text-muted)] hover:text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2 rounded"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
-        {/* Status indicator */}
+        {/* Phase indicator */}
         <div className="mx-4 mb-4 px-3 py-2 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-100 dark:border-blue-900">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-xs text-blue-700 dark:text-blue-400 font-medium">Research Phase</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500" aria-hidden="true" />
+            <span className="text-xs text-blue-700 dark:text-blue-400 font-medium">Paper Trade</span>
           </div>
-          <p className="text-[10px] text-blue-400 dark:text-blue-500 mt-1">Model v6.1-PPO</p>
+          <p className="text-[10px] text-blue-400 dark:text-blue-500 mt-1">Pre-live hardening</p>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 space-y-1">
+        <nav aria-label="Sections" className="flex-1 px-3 space-y-1">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (
@@ -92,13 +104,17 @@ export default function Sidebar() {
                 key={item.href}
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                aria-current={isActive ? "page" : undefined}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2 ${
                   isActive
                     ? "bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 border border-blue-100 dark:border-blue-900"
                     : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg)]"
                 }`}
               >
-                <item.icon className={`w-[18px] h-[18px] ${isActive ? "text-blue-600 dark:text-blue-400" : ""}`} />
+                <item.icon
+                  className={`w-[18px] h-[18px] ${isActive ? "text-blue-600 dark:text-blue-400" : ""}`}
+                  aria-hidden="true"
+                />
                 {item.name}
               </Link>
             );
@@ -108,23 +124,26 @@ export default function Sidebar() {
         {/* Footer */}
         <div className="px-4 py-4 border-t border-[var(--border)] space-y-3">
           <button
+            type="button"
             onClick={toggle}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg)] transition-colors"
+            aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+            aria-pressed={theme === "dark"}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2"
           >
             {theme === "light" ? (
               <>
-                <Moon className="w-4 h-4" />
+                <Moon className="w-4 h-4" aria-hidden="true" />
                 Dark Mode
               </>
             ) : (
               <>
-                <Sun className="w-4 h-4" />
+                <Sun className="w-4 h-4" aria-hidden="true" />
                 Light Mode
               </>
             )}
           </button>
           <p className="text-[10px] text-[var(--text-muted)] text-center opacity-60">
-            Powered by Reinforcement Learning
+            Range prediction · Entry timing · Meta-learner
           </p>
         </div>
       </aside>

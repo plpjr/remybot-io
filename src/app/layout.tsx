@@ -7,15 +7,19 @@ import ThemeProvider from "@/components/ThemeProvider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Kronos | AI-Powered BTC Trading Bot",
+  title: "Kronos | BTC Range-Prediction Trading Bot",
   description:
-    "Live performance dashboard for the Kronos reinforcement learning trading model. Track win rate, returns, and weekly improvements.",
+    "Live performance dashboard for the Kronos trading bot — range prediction " +
+    "(Chronos zero-shot) plus entry timing (Kronos fine-tuned), with transparent " +
+    "paper-trade audit trail before any real-money flip.",
   icons: {
     icon: "/kronos-icon.svg",
   },
   openGraph: {
     title: "Kronos Trading Bot",
-    description: "AI-powered BTC trading with real-time performance tracking",
+    description:
+      "BTC scalper driven by foundation-model range prediction. Paper trades " +
+      "published live so you can see the strategy work before it costs anything.",
     url: "https://remybot.io",
   },
 };
