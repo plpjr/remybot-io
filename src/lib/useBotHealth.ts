@@ -32,6 +32,17 @@ export interface BotHealthResponse {
   tick_feed_crashed?: boolean;
   last_tick_age_seconds?: number | null;
   position?: BotHealthPosition | null;
+  // Trading instrument the bot is currently tracking. `symbol` is the
+  // Coinbase-native product id (e.g. "BIP-20DEC30-CDE") — matches
+  // kronos_trades.symbol column. `ccxt_symbol` is the CCXT market id
+  // (e.g. "BTC/USD:USD-301220") — exposed mainly for debugging.
+  symbol?: string;
+  ccxt_symbol?: string;
+  // Execution mode: "paper" (simulated fills) or "live" (real orders).
+  // Also stamped on every kronos_trades / kronos_signals /
+  // kronos_predictions row — filter those via the kronos_paper_* and
+  // kronos_live_* views.
+  mode?: "paper" | "live";
   fetched_at: string;
   upstream_status?: number;
   error?: string;
