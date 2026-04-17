@@ -57,3 +57,22 @@ body {
 .stagger-3 { animation-delay: 0.15s; }
 .stagger-4 { animation-delay: 0.2s; }
 .stagger-5 { animation-delay: 0.25s; }
+
+/*
+ * Respect prefers-reduced-motion (WCAG 2.3.3). Disable the fade-in
+ * and any theme/surface transitions for users who've opted out —
+ * motion sickness is a real trading-dashboard problem at 2am.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  [class*="stagger-"] {
+    animation: none !important;
+    animation-delay: 0s !important;
+  }
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -138,16 +138,6 @@ interface KronosPredictionRow {
 
 /* ─── Helpers ─── */
 
-function timeSince(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const d = Math.floor(diff / 86400000);
-  const h = Math.floor((diff % 86400000) / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  if (d > 0) return `${d}d ${h}h ${m}m`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
-}
-
 function formatUptime(seconds: number | null | undefined): string {
   if (!seconds || seconds <= 0) return "—";
   const d = Math.floor(seconds / 86400);

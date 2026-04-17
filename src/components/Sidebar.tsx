@@ -29,7 +29,7 @@ const navItems = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { theme, toggle } = useTheme();
+  const { theme, toggle, hydrated } = useTheme();
 
   return (
     <>
@@ -130,17 +130,29 @@ export default function Sidebar() {
             aria-pressed={theme === "dark"}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2"
           >
-            {theme === "light" ? (
-              <>
-                <Moon className="w-4 h-4" aria-hidden="true" />
-                Dark Mode
-              </>
-            ) : (
-              <>
-                <Sun className="w-4 h-4" aria-hidden="true" />
-                Light Mode
-              </>
-            )}
+            {/*
+              Render the icon/label pair only after hydration — before
+              that the ThemeProvider returns a stable "light" to match
+              SSR, so showing Moon+"Dark Mode" would flash to
+              Sun+"Light Mode" on dark-mode users' first paint.
+              `suppressHydrationWarning` on the button's inner span
+              silences the warning for the invisible first pass.
+            */}
+            <span suppressHydrationWarning className="inline-flex items-center gap-2 min-h-[1rem]">
+              {hydrated ? (
+                theme === "light" ? (
+                  <>
+                    <Moon className="w-4 h-4" aria-hidden="true" />
+                    Dark Mode
+                  </>
+                ) : (
+                  <>
+                    <Sun className="w-4 h-4" aria-hidden="true" />
+                    Light Mode
+                  </>
+                )
+              ) : null}
+            </span>
           </button>
           <p className="text-[10px] text-[var(--text-muted)] text-center opacity-60">
             Range prediction · Entry timing · Meta-learner
