@@ -19,6 +19,12 @@
 
 interface Env {
   KRONOS_HEALTHZ_URL?: string;
+  // Shared bearer token the bot's health server validates. Set to the
+  // same value as /etc/kronos-bot.env::KRONOS_HEALTHZ_TOKEN on the VPS.
+  // Omitted in local dev — healthz.ts only attaches the header when the
+  // var is present, so the local bot (which ignores auth when the token
+  // env var is unset) still works.
+  KRONOS_HEALTHZ_TOKEN?: string;
 }
 
 interface BotPosition {
@@ -90,10 +96,22 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
+  // Build headers: bearer token + accept. The bot's health server
+  // requires the Authorization header when its KRONOS_HEALTHZ_TOKEN env
+  // var is set; we pass it through as a shared secret. When the token
+  // isn't configured on Pages the fetch still works against an unauth
+  // bot (dev-only mode).
+  const upstreamHeaders: Record<string, string> = {
+    Accept: "application/json",
+  };
+  if (context.env.KRONOS_HEALTHZ_TOKEN) {
+    upstreamHeaders.Authorization = `Bearer ${context.env.KRONOS_HEALTHZ_TOKEN}`;
+  }
+
   try {
     const res = await fetch(upstream, {
       signal: controller.signal,
-      headers: { Accept: "application/json" },
+      headers: upstreamHeaders,
     });
     clearTimeout(timer);
 

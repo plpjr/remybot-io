@@ -157,10 +157,28 @@ function isBotLive(statusRow: Pick<BotStatusRow, "status" | "timestamp">): boole
 
 /* ─── Fetch Functions ─── */
 
+/*
+ * Trade-facing readers query the `kronos_paper_*` views instead of the
+ * base `kronos_trades` / `kronos_signals` / `kronos_predictions` tables.
+ * The views are defined by supabase migration
+ * 20260417230000_paper_live_mode_and_symbol.sql as
+ *   SELECT * FROM <base> WHERE mode = 'paper'
+ * so paper + live never mix in Overview / Equity / Long-Short rollups.
+ * When the bot eventually flips live, swap these to `kronos_live_*`
+ * (or parameterize by a `mode` URL query param).
+ *
+ * Exceptions:
+ *   - `kronos_bot_status` — singleton, mode-independent health heartbeat.
+ *   - `market_pulse` — tick-level market data, shared across modes.
+ *   - `fetchDataFreshness` — intentionally queries base tables to prove
+ *     the WRITER is landing rows (views just filter; an empty view can
+ *     hide a broken writer if every new row went to mode='live').
+ */
+
 /**
  * Overview stats blend bot-health (from `kronos_bot_status` singleton)
- * with trade-driven aggregates (from `kronos_trades`). Zero trades →
- * zero-everything with `status: "stopped"`. No synthetic win-rate
+ * with trade-driven aggregates (from `kronos_paper_trades`). Zero trades
+ * → zero-everything with `status: "stopped"`. No synthetic win-rate
  * fallback — dashboard honesty is the contract.
  */
 export async function fetchOverviewStats(): Promise<OverviewStats> {
@@ -176,7 +194,7 @@ export async function fetchOverviewStats(): Promise<OverviewStats> {
       // Pull last ~1000 closed trades to compute rollups client-side.
       // dbt marts (agg_daily_pnl, fct_trades) will replace this once applied.
       supabase
-        .from("kronos_trades")
+        .from("kronos_paper_trades")
         .select("id, entry_time, exit_time, profit_bps, profit_usd, side")
         .not("exit_time", "is", null)
         .order("exit_time", { ascending: false })
@@ -289,7 +307,7 @@ export async function fetchEquityCurve() {
 
   try {
     const { data } = await supabase
-      .from("kronos_trades")
+      .from("kronos_paper_trades")
       .select("exit_time, profit_usd")
       .not("exit_time", "is", null)
       .not("profit_usd", "is", null)
@@ -322,7 +340,7 @@ export async function fetchMonthlyReturns() {
 
   try {
     const { data } = await supabase
-      .from("kronos_trades")
+      .from("kronos_paper_trades")
       .select("exit_time, profit_usd")
       .not("exit_time", "is", null)
       .not("profit_usd", "is", null)
@@ -358,7 +376,7 @@ export async function fetchLongShortBreakdown() {
 
   try {
     const { data } = await supabase
-      .from("kronos_trades")
+      .from("kronos_paper_trades")
       .select("side, profit_usd, profit_bps")
       .not("exit_time", "is", null)
       .limit(10_000);
@@ -415,7 +433,7 @@ export async function fetchRecentPerformance() {
 
   try {
     const { data } = await supabase
-      .from("kronos_trades")
+      .from("kronos_paper_trades")
       .select("exit_time, profit_usd, profit_bps")
       .not("exit_time", "is", null)
       .order("exit_time", { ascending: false })
@@ -468,7 +486,7 @@ export async function fetchRecentPredictions(limit: number = 500): Promise<Krono
 
   try {
     const { data } = await supabase
-      .from("kronos_predictions")
+      .from("kronos_paper_predictions")
       .select("*")
       .order("timestamp", { ascending: false })
       .limit(limit);
@@ -485,7 +503,7 @@ export async function fetchRecentTrades(limit: number = 200): Promise<KronosTrad
 
   try {
     const { data } = await supabase
-      .from("kronos_trades")
+      .from("kronos_paper_trades")
       .select("*")
       .order("entry_time", { ascending: false })
       .limit(limit);
