@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3 } from "lucide-react";
+import { BarChart3, Target } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import MockDataBanner from "@/components/MockDataBanner";
 import LiveMathDashboard from "@/components/LiveMathDashboard";
@@ -9,6 +9,16 @@ import { useKronosData } from "@/lib/use-data";
 import Chart from "@/components/Chart";
 import type { EChartsOption } from "@/components/Chart";
 import { volatilityRegimes, trendVsRange, btcCorrelation, volumeRegimes } from "@/lib/mock-data";
+
+function RangeKpi({ label, value, sub }: { label: string; value: string; sub: string }) {
+  return (
+    <div className="bg-[var(--bg)] rounded-xl p-4 border border-[var(--border)]">
+      <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">{label}</p>
+      <p className="text-2xl font-bold text-[var(--text)] mt-1">{value}</p>
+      <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{sub}</p>
+    </div>
+  );
+}
 
 function RegimeTable({ title, description, data }: { title: string; description: string; data: { regime: string; winRate: number; avgPnl: number; trades: number; sharpe?: number }[] }) {
   return (
@@ -66,6 +76,42 @@ export default function AnalysisPage() {
   const { data: kronosData } = useKronosData();
   const volRegime = kronosData.volatilityRegime;
   const hasVolRegime = volRegime.length > 0;
+
+  const predAcc = kronosData.predictionAccuracy;
+  const hasPredAcc = predAcc.rows.length > 0;
+
+  const rangeErrorOption: EChartsOption = hasPredAcc ? {
+    tooltip: {
+      trigger: "axis",
+      formatter: (params: unknown) => {
+        const p = (params as { name: string; data: number }[])[0];
+        return `${p.name}<br/>Range error: <b>${p.data?.toFixed(1)} bps</b>`;
+      },
+    },
+    xAxis: {
+      type: "category",
+      data: predAcc.rows.map((r) => r.timestamp.slice(5, 16)),
+      axisLabel: { fontSize: 10, interval: Math.max(0, Math.floor(predAcc.rows.length / 8) - 1) },
+      boundaryGap: false,
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: { formatter: (v: number) => `${v}` },
+      name: "bps",
+      nameTextStyle: { fontSize: 10 },
+    },
+    series: [{
+      type: "bar",
+      data: predAcc.rows.map((r) => ({
+        value: r.range_error_bps ?? 0,
+        itemStyle: {
+          color: (r.range_error_bps ?? 0) < 10 ? "#10b981" : (r.range_error_bps ?? 0) < 30 ? "#f59e0b" : "#ef4444",
+          borderRadius: [3, 3, 0, 0],
+        },
+      })),
+      barMaxWidth: 6,
+    }],
+  } : {};
 
   const n = btcCorrelation.length;
   const meanX = btcCorrelation.reduce((s, p) => s + p.btcReturn, 0) / n;
@@ -177,6 +223,57 @@ export default function AnalysisPage() {
 
       {/* Live Mathematical Analysis */}
       <LiveMathDashboard />
+
+      {/* Chronos Range Prediction Accuracy (backed by kronos_paper_prediction_accuracy view) */}
+      <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+        <div className="flex items-center gap-2 mb-1">
+          <Target className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          <h3 className="text-lg font-semibold text-[var(--text)]">Chronos Range Prediction Accuracy</h3>
+        </div>
+        <p className="text-sm text-[var(--text-muted)] mb-6">
+          How close predicted high/low ranges land to observed ranges. Only evaluates rows with observed data (5 min+ old).
+        </p>
+        {hasPredAcc ? (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+              <RangeKpi
+                label="Avg Range Error"
+                value={`${predAcc.summary.avgRangeErrorBps.toFixed(1)} bps`}
+                sub="Lower is better"
+              />
+              <RangeKpi
+                label="High Hit Rate"
+                value={`${predAcc.summary.highHitRate.toFixed(1)}%`}
+                sub="Observed high within range"
+              />
+              <RangeKpi
+                label="Low Hit Rate"
+                value={`${predAcc.summary.lowHitRate.toFixed(1)}%`}
+                sub="Observed low within range"
+              />
+              <RangeKpi
+                label="Direction Accuracy"
+                value={`${predAcc.summary.directionAccuracy.toFixed(1)}%`}
+                sub={`Across ${predAcc.summary.n} evaluated rows`}
+              />
+            </div>
+            <Chart option={rangeErrorOption} height={220} />
+            <p className="text-xs text-[var(--text-muted)] mt-3">
+              Bars = range_error_bps (green &lt; 10, amber &lt; 30, red &gt;= 30). High accuracy on range is the core Chronos edge — see project CLAUDE.md.
+            </p>
+          </>
+        ) : (
+          <div
+            className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg)] text-center px-4"
+            style={{ height: 200 }}
+          >
+            <p className="text-sm font-medium text-[var(--text)]">No observed ranges yet</p>
+            <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm">
+              Waiting for the first batch of predictions to age into the 5-minute observation window.
+            </p>
+          </div>
+        )}
+      </section>
 
       {/* Live Volatility Regime (from Supabase view) */}
       {hasVolRegime && (

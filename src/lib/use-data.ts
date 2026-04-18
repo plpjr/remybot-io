@@ -15,6 +15,19 @@ import {
   fetchMicrostructureHourly,
   fetchVolatilityRegime,
   fetchDataFreshness,
+  fetchDailyPnl,
+  fetchWeeklyPnl,
+  fetchHourlyPerformance,
+  fetchTradeDurations,
+  fetchTradeStreaks,
+  fetchPredictionAccuracy,
+  fetchConfidenceDistribution,
+  fetchRegimeBreakdown,
+  fetchDecisionTrace,
+  fetchDrawdownCurve,
+  fetchBtcPriceChart,
+  fetchCircuitBreakers,
+  fetchTradeMetrics,
   getSkillRadar,
   getWeeklyImprovements,
   type OverviewStats,
@@ -25,6 +38,20 @@ import {
   type MicrostructureHourly,
   type VolatilityRegime,
   type DataFreshness,
+  type DailyPnlPoint,
+  type WeeklyPnlPoint,
+  type HourlyPerformance,
+  type TradeDurationBucket,
+  type StreakSummary,
+  type PredictionAccuracyRow,
+  type PredictionAccuracySummary,
+  type ConfidenceBucket,
+  type RegimeBreakdown,
+  type DecisionTraceRow,
+  type DrawdownPoint,
+  type BtcPricePoint,
+  type CircuitBreakerState,
+  type TradeMetrics,
 } from "./data";
 import {
   overviewStats as mockOverview,
@@ -62,7 +89,61 @@ export interface KronosData {
   microstructureHourly: MicrostructureHourly[];
   volatilityRegime: VolatilityRegime[];
   dataFreshness: DataFreshness[];
+
+  // Paper-mode fetchers wired for /trading /risk /model /analysis.
+  dailyPnl: DailyPnlPoint[];
+  weeklyPnl: WeeklyPnlPoint[];
+  hourlyPerformance: HourlyPerformance[];
+  tradeDurations: TradeDurationBucket[];
+  streaks: StreakSummary;
+  predictionAccuracy: {
+    rows: PredictionAccuracyRow[];
+    summary: PredictionAccuracySummary;
+  };
+  confidenceDistribution: ConfidenceBucket[];
+  regimeBreakdown: RegimeBreakdown[];
+  decisionTrace: DecisionTraceRow[];
+  drawdownCurve: DrawdownPoint[];
+  btcPriceChart: BtcPricePoint[];
+  circuitBreakers: Record<string, CircuitBreakerState>;
+  tradeMetrics: TradeMetrics;
 }
+
+const emptyStreaks: StreakSummary = {
+  currentStreak: { type: "none", length: 0 },
+  longestWinStreak: 0,
+  longestLossStreak: 0,
+  streakHistory: [],
+};
+
+const emptyTradeMetrics: TradeMetrics = {
+  profitFactor: 0,
+  expectancy: 0,
+  payoffRatio: 0,
+  avgWin: 0,
+  avgLoss: 0,
+  largestWin: 0,
+  largestLoss: 0,
+  avgSlippage: 0,
+  totalFees: 0,
+  netAfterFees: 0,
+  totalTrades: 0,
+};
+
+const emptyHourly: HourlyPerformance[] = Array.from({ length: 24 }, (_, hour) => ({
+  hour,
+  avgPnlBps: 0,
+  trades: 0,
+}));
+
+const emptyDurations: TradeDurationBucket[] = [
+  { range: "<5m", count: 0, avgPnlBps: 0 },
+  { range: "5-15m", count: 0, avgPnlBps: 0 },
+  { range: "15-30m", count: 0, avgPnlBps: 0 },
+  { range: "30-60m", count: 0, avgPnlBps: 0 },
+  { range: "1-4h", count: 0, avgPnlBps: 0 },
+  { range: ">4h", count: 0, avgPnlBps: 0 },
+];
 
 export function useKronosData() {
   const [data, setData] = useState<KronosData>({
@@ -80,6 +161,28 @@ export function useKronosData() {
     microstructureHourly: [],
     volatilityRegime: [],
     dataFreshness: [],
+    dailyPnl: [],
+    weeklyPnl: [],
+    hourlyPerformance: emptyHourly,
+    tradeDurations: emptyDurations,
+    streaks: emptyStreaks,
+    predictionAccuracy: {
+      rows: [],
+      summary: {
+        avgRangeErrorBps: 0,
+        highHitRate: 0,
+        lowHitRate: 0,
+        directionAccuracy: 0,
+        n: 0,
+      },
+    },
+    confidenceDistribution: [],
+    regimeBreakdown: [],
+    decisionTrace: [],
+    drawdownCurve: [],
+    btcPriceChart: [],
+    circuitBreakers: {},
+    tradeMetrics: emptyTradeMetrics,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +203,19 @@ export function useKronosData() {
         microstructureHourly,
         volatilityRegime,
         dataFreshness,
+        dailyPnl,
+        weeklyPnl,
+        hourlyPerformance,
+        tradeDurations,
+        streaks,
+        predictionAccuracy,
+        confidenceDistribution,
+        regimeBreakdown,
+        decisionTrace,
+        drawdownCurve,
+        btcPriceChart,
+        circuitBreakers,
+        tradeMetrics,
       ] = await Promise.all([
         fetchOverviewStats(),
         fetchEquityCurve(),
@@ -113,6 +229,19 @@ export function useKronosData() {
         fetchMicrostructureHourly(),
         fetchVolatilityRegime(),
         fetchDataFreshness(),
+        fetchDailyPnl(),
+        fetchWeeklyPnl(),
+        fetchHourlyPerformance(),
+        fetchTradeDurations(),
+        fetchTradeStreaks(),
+        fetchPredictionAccuracy(),
+        fetchConfidenceDistribution(),
+        fetchRegimeBreakdown(),
+        fetchDecisionTrace(),
+        fetchDrawdownCurve(),
+        fetchBtcPriceChart(),
+        fetchCircuitBreakers(),
+        fetchTradeMetrics(),
       ]);
 
       setData({
@@ -130,6 +259,19 @@ export function useKronosData() {
         microstructureHourly,
         volatilityRegime,
         dataFreshness,
+        dailyPnl,
+        weeklyPnl,
+        hourlyPerformance,
+        tradeDurations,
+        streaks,
+        predictionAccuracy,
+        confidenceDistribution,
+        regimeBreakdown,
+        decisionTrace,
+        drawdownCurve,
+        btcPriceChart,
+        circuitBreakers,
+        tradeMetrics,
       });
       setError(null);
     } catch (e) {

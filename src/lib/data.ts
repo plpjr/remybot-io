@@ -628,6 +628,703 @@ export async function fetchVolatilityRegime(): Promise<VolatilityRegime[]> {
   return [];
 }
 
+/* ─── New paper-mode-backed fetchers for /trading /risk /model /analysis ─── */
+
+export interface DailyPnlPoint {
+  date: string; // YYYY-MM-DD (UTC)
+  pnl_usd: number;
+}
+
+export interface WeeklyPnlPoint {
+  week: string; // ISO-week key: YYYY-Www
+  pnl_usd: number;
+}
+
+export interface HourlyPerformance {
+  hour: number; // 0..23
+  avgPnlBps: number;
+  trades: number;
+}
+
+export interface TradeDurationBucket {
+  range: string;
+  count: number;
+  avgPnlBps: number;
+}
+
+export interface StreakSummary {
+  currentStreak: { type: "win" | "loss" | "none"; length: number };
+  longestWinStreak: number;
+  longestLossStreak: number;
+  streakHistory: { type: "win" | "loss"; length: number }[];
+}
+
+export interface PredictionAccuracyRow {
+  timestamp: string;
+  predicted_range_bps: number;
+  observed_range_bps: number | null;
+  range_error_bps: number | null;
+  high_hit: boolean | null;
+  low_hit: boolean | null;
+  direction_correct: boolean | null;
+  confidence: number;
+}
+
+export interface PredictionAccuracySummary {
+  avgRangeErrorBps: number;
+  highHitRate: number;
+  lowHitRate: number;
+  directionAccuracy: number;
+  n: number;
+}
+
+export interface ConfidenceBucket {
+  bucket: string;
+  count: number;
+}
+
+export interface RegimeBreakdown {
+  regime: string;
+  predictions: number;
+  trades: number;
+  avgPnlBps: number;
+}
+
+export interface DecisionTraceRow {
+  timestamp: string;
+  decision_action: string;
+  decision_reason: string;
+  predicted_range_bps: number | null;
+  confidence: number | null;
+}
+
+export interface DrawdownPoint {
+  date: string; // YYYY-MM-DD
+  equity: number;
+  drawdownPct: number; // <= 0
+}
+
+export interface BtcPricePoint {
+  t: string;
+  price: number;
+  realized_vol_10s: number | null;
+}
+
+export interface CircuitBreakerState {
+  state: string;
+  failure_count: number;
+}
+
+export interface TradeMetrics {
+  profitFactor: number;
+  expectancy: number; // bps
+  payoffRatio: number;
+  avgWin: number; // bps
+  avgLoss: number; // bps (negative)
+  largestWin: number; // bps
+  largestLoss: number; // bps (negative)
+  avgSlippage: number; // bps — not tracked yet, returns 0
+  totalFees: number; // USD — not tracked yet, returns 0
+  netAfterFees: number; // USD
+  totalTrades: number;
+}
+
+/** ISO week key (YYYY-Www) for a given Date. Week starts on Monday, per ISO-8601. */
+function isoWeekKey(d: Date): string {
+  // Copy to avoid mutating input.
+  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const dayNum = date.getUTCDay() || 7; // Mon=1..Sun=7
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
+
+/**
+ * Daily PnL in USD, bucketed by exit_time day (UTC). Empty array when
+ * no closed trades exist.
+ */
+export async function fetchDailyPnl(): Promise<DailyPnlPoint[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_trades")
+      .select("exit_time, profit_usd")
+      .not("exit_time", "is", null)
+      .not("profit_usd", "is", null)
+      .order("exit_time", { ascending: true })
+      .limit(5000);
+
+    const rows = (data ?? []) as { exit_time: string; profit_usd: number }[];
+    if (rows.length === 0) return [];
+
+    const byDay = new Map<string, number>();
+    for (const r of rows) {
+      const day = r.exit_time.slice(0, 10);
+      byDay.set(day, (byDay.get(day) ?? 0) + r.profit_usd);
+    }
+    return Array.from(byDay.entries()).map(([date, pnl_usd]) => ({
+      date,
+      pnl_usd: Math.round(pnl_usd * 100) / 100,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** Weekly PnL in USD, bucketed by ISO week. */
+export async function fetchWeeklyPnl(): Promise<WeeklyPnlPoint[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_trades")
+      .select("exit_time, profit_usd")
+      .not("exit_time", "is", null)
+      .not("profit_usd", "is", null)
+      .order("exit_time", { ascending: true })
+      .limit(5000);
+
+    const rows = (data ?? []) as { exit_time: string; profit_usd: number }[];
+    if (rows.length === 0) return [];
+
+    const byWeek = new Map<string, number>();
+    for (const r of rows) {
+      const key = isoWeekKey(new Date(r.exit_time));
+      byWeek.set(key, (byWeek.get(key) ?? 0) + r.profit_usd);
+    }
+    return Array.from(byWeek.entries()).map(([week, pnl_usd]) => ({
+      week,
+      pnl_usd: Math.round(pnl_usd * 100) / 100,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Hourly performance: group by `hour_utc` on `kronos_paper_trades`.
+ * Always returns 24 rows; missing hours fill with zeros so heatmaps stay
+ * aligned.
+ */
+export async function fetchHourlyPerformance(): Promise<HourlyPerformance[]> {
+  const empty: HourlyPerformance[] = Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    avgPnlBps: 0,
+    trades: 0,
+  }));
+  if (!supabaseConfigured) return empty;
+
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_trades")
+      .select("hour_utc, profit_bps, exit_time")
+      .not("exit_time", "is", null)
+      .limit(10_000);
+
+    const rows = (data ?? []) as {
+      hour_utc: number | null;
+      profit_bps: number | null;
+      exit_time: string | null;
+    }[];
+    if (rows.length === 0) return empty;
+
+    const sums = new Array(24).fill(0);
+    const counts = new Array(24).fill(0);
+    for (const r of rows) {
+      // Fall back to deriving from exit_time if hour_utc is absent (older rows).
+      const h =
+        r.hour_utc !== null && r.hour_utc !== undefined
+          ? r.hour_utc
+          : r.exit_time
+            ? new Date(r.exit_time).getUTCHours()
+            : null;
+      if (h === null || h < 0 || h > 23) continue;
+      sums[h] += r.profit_bps ?? 0;
+      counts[h] += 1;
+    }
+    return empty.map((base, h) => ({
+      hour: h,
+      trades: counts[h],
+      avgPnlBps: counts[h] > 0 ? Math.round((sums[h] / counts[h]) * 10) / 10 : 0,
+    }));
+  } catch {
+    return empty;
+  }
+}
+
+/** Trade-duration histogram (minutes). Fixed bucket labels per spec. */
+export async function fetchTradeDurations(): Promise<TradeDurationBucket[]> {
+  const buckets: TradeDurationBucket[] = [
+    { range: "<5m", count: 0, avgPnlBps: 0 },
+    { range: "5-15m", count: 0, avgPnlBps: 0 },
+    { range: "15-30m", count: 0, avgPnlBps: 0 },
+    { range: "30-60m", count: 0, avgPnlBps: 0 },
+    { range: "1-4h", count: 0, avgPnlBps: 0 },
+    { range: ">4h", count: 0, avgPnlBps: 0 },
+  ];
+  if (!supabaseConfigured) return buckets;
+
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_trades")
+      .select("duration_minutes, profit_bps")
+      .not("exit_time", "is", null)
+      .limit(10_000);
+
+    const rows = (data ?? []) as {
+      duration_minutes: number | null;
+      profit_bps: number | null;
+    }[];
+
+    const idx = (m: number) => {
+      if (m < 5) return 0;
+      if (m < 15) return 1;
+      if (m < 30) return 2;
+      if (m < 60) return 3;
+      if (m < 240) return 4;
+      return 5;
+    };
+    const sums = new Array(6).fill(0);
+    const counts = new Array(6).fill(0);
+    for (const r of rows) {
+      if (r.duration_minutes === null || r.duration_minutes === undefined) continue;
+      const i = idx(r.duration_minutes);
+      sums[i] += r.profit_bps ?? 0;
+      counts[i] += 1;
+    }
+    return buckets.map((b, i) => ({
+      range: b.range,
+      count: counts[i],
+      avgPnlBps: counts[i] > 0 ? Math.round((sums[i] / counts[i]) * 10) / 10 : 0,
+    }));
+  } catch {
+    return buckets;
+  }
+}
+
+/** Win/loss streaks computed from recent closed trades ordered by exit_time. */
+export async function fetchTradeStreaks(): Promise<StreakSummary> {
+  const empty: StreakSummary = {
+    currentStreak: { type: "none", length: 0 },
+    longestWinStreak: 0,
+    longestLossStreak: 0,
+    streakHistory: [],
+  };
+  if (!supabaseConfigured) return empty;
+
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_trades")
+      .select("exit_time, profit_usd")
+      .not("exit_time", "is", null)
+      .not("profit_usd", "is", null)
+      .order("exit_time", { ascending: true })
+      .limit(5000);
+
+    const rows = (data ?? []) as { exit_time: string; profit_usd: number }[];
+    if (rows.length === 0) return empty;
+
+    const streaks: { type: "win" | "loss"; length: number }[] = [];
+    let current: { type: "win" | "loss"; length: number } | null = null;
+    for (const r of rows) {
+      const t: "win" | "loss" = r.profit_usd >= 0 ? "win" : "loss";
+      if (current && current.type === t) {
+        current.length += 1;
+      } else {
+        if (current) streaks.push(current);
+        current = { type: t, length: 1 };
+      }
+    }
+    if (current) streaks.push(current);
+
+    const longestWin = streaks
+      .filter((s) => s.type === "win")
+      .reduce((m, s) => Math.max(m, s.length), 0);
+    const longestLoss = streaks
+      .filter((s) => s.type === "loss")
+      .reduce((m, s) => Math.max(m, s.length), 0);
+
+    const last = streaks[streaks.length - 1];
+    return {
+      currentStreak: last
+        ? { type: last.type, length: last.length }
+        : { type: "none", length: 0 },
+      longestWinStreak: longestWin,
+      longestLossStreak: longestLoss,
+      streakHistory: streaks.slice(-20),
+    };
+  } catch {
+    return empty;
+  }
+}
+
+/**
+ * Chronos range-prediction accuracy rows + summary. Backed by the
+ * `kronos_paper_prediction_accuracy` VIEW (paper-mode only; no live
+ * twin yet). Drops rows where observed_high is null (not yet backfilled).
+ */
+export async function fetchPredictionAccuracy(limit: number = 500): Promise<{
+  rows: PredictionAccuracyRow[];
+  summary: PredictionAccuracySummary;
+}> {
+  const empty = {
+    rows: [] as PredictionAccuracyRow[],
+    summary: {
+      avgRangeErrorBps: 0,
+      highHitRate: 0,
+      lowHitRate: 0,
+      directionAccuracy: 0,
+      n: 0,
+    },
+  };
+  if (!supabaseConfigured) return empty;
+
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_prediction_accuracy")
+      .select(
+        "timestamp, predicted_range_bps, observed_range_bps, range_error_bps, high_hit, low_hit, direction_correct, confidence",
+      )
+      .not("observed_high", "is", null)
+      .order("timestamp", { ascending: false })
+      .limit(limit);
+
+    const raw = (data ?? []) as PredictionAccuracyRow[];
+    if (raw.length === 0) return empty;
+
+    // Present rows ascending by time for chart display.
+    const rows = [...raw].reverse();
+
+    const n = rows.length;
+    const errSum = rows.reduce(
+      (s, r) => s + (r.range_error_bps ?? 0),
+      0,
+    );
+    const highHits = rows.filter((r) => r.high_hit === true).length;
+    const lowHits = rows.filter((r) => r.low_hit === true).length;
+    const dirHits = rows.filter((r) => r.direction_correct === true).length;
+
+    return {
+      rows,
+      summary: {
+        avgRangeErrorBps: Math.round((errSum / n) * 10) / 10,
+        highHitRate: Math.round((highHits / n) * 1000) / 10,
+        lowHitRate: Math.round((lowHits / n) * 1000) / 10,
+        directionAccuracy: Math.round((dirHits / n) * 1000) / 10,
+        n,
+      },
+    };
+  } catch {
+    return empty;
+  }
+}
+
+/** 10-percent buckets of `kronos_paper_predictions.confidence`. */
+export async function fetchConfidenceDistribution(): Promise<ConfidenceBucket[]> {
+  const labels = [
+    "0-10%",
+    "10-20%",
+    "20-30%",
+    "30-40%",
+    "40-50%",
+    "50-60%",
+    "60-70%",
+    "70-80%",
+    "80-90%",
+    "90-100%",
+  ];
+  const empty: ConfidenceBucket[] = labels.map((bucket) => ({ bucket, count: 0 }));
+  if (!supabaseConfigured) return empty;
+
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_predictions")
+      .select("confidence")
+      .not("confidence", "is", null)
+      .limit(10_000);
+
+    const rows = (data ?? []) as { confidence: number }[];
+    if (rows.length === 0) return empty;
+
+    const counts = new Array(10).fill(0);
+    for (const r of rows) {
+      // Confidence stored as 0..1 float; tolerate 0..100 too.
+      const c = r.confidence > 1 ? r.confidence / 100 : r.confidence;
+      const i = Math.min(9, Math.max(0, Math.floor(c * 10)));
+      counts[i] += 1;
+    }
+    return labels.map((bucket, i) => ({ bucket, count: counts[i] }));
+  } catch {
+    return empty;
+  }
+}
+
+/** Regime breakdown: prediction counts + trade counts + avg PnL bps per regime. */
+export async function fetchRegimeBreakdown(): Promise<RegimeBreakdown[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const [predRes, tradeRes] = await Promise.all([
+      supabase
+        .from("kronos_paper_predictions")
+        .select("regime")
+        .limit(10_000),
+      supabase
+        .from("kronos_paper_trades")
+        .select("regime, profit_bps")
+        .not("exit_time", "is", null)
+        .limit(10_000),
+    ]);
+
+    const preds = (predRes.data ?? []) as { regime: string | null }[];
+    const trades = (tradeRes.data ?? []) as {
+      regime: string | null;
+      profit_bps: number | null;
+    }[];
+
+    const agg = new Map<
+      string,
+      { predictions: number; trades: number; bpsSum: number }
+    >();
+    for (const p of preds) {
+      const key = p.regime ?? "unknown";
+      const entry = agg.get(key) ?? { predictions: 0, trades: 0, bpsSum: 0 };
+      entry.predictions += 1;
+      agg.set(key, entry);
+    }
+    for (const t of trades) {
+      const key = t.regime ?? "unknown";
+      const entry = agg.get(key) ?? { predictions: 0, trades: 0, bpsSum: 0 };
+      entry.trades += 1;
+      entry.bpsSum += t.profit_bps ?? 0;
+      agg.set(key, entry);
+    }
+
+    return Array.from(agg.entries())
+      .map(([regime, v]) => ({
+        regime,
+        predictions: v.predictions,
+        trades: v.trades,
+        avgPnlBps:
+          v.trades > 0 ? Math.round((v.bpsSum / v.trades) * 10) / 10 : 0,
+      }))
+      .sort((a, b) => b.predictions - a.predictions);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Most-recent decision trace from `kronos_paper_predictions`. Answers
+ * "why did the bot hold?" at a glance.
+ */
+export async function fetchDecisionTrace(limit: number = 50): Promise<DecisionTraceRow[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_predictions")
+      .select(
+        "timestamp, decision_action, decision_reason, predicted_range_bps, confidence",
+      )
+      .order("timestamp", { ascending: false })
+      .limit(limit);
+
+    const rows = (data ?? []) as DecisionTraceRow[];
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Drawdown curve: cumulative PnL → running max → drawdown %.
+ * Baseline is $10k; first point is the starting equity on day zero.
+ */
+export async function fetchDrawdownCurve(): Promise<DrawdownPoint[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_trades")
+      .select("exit_time, profit_usd")
+      .not("exit_time", "is", null)
+      .not("profit_usd", "is", null)
+      .order("exit_time", { ascending: true })
+      .limit(5000);
+
+    const rows = (data ?? []) as { exit_time: string; profit_usd: number }[];
+    if (rows.length === 0) return [];
+
+    const baseline = 10_000;
+    const byDay = new Map<string, number>();
+    for (const r of rows) {
+      const day = r.exit_time.slice(0, 10);
+      byDay.set(day, (byDay.get(day) ?? 0) + r.profit_usd);
+    }
+
+    let equity = baseline;
+    let peak = baseline;
+    const out: DrawdownPoint[] = [];
+    for (const [date, pnl] of Array.from(byDay.entries()).sort(([a], [b]) =>
+      a.localeCompare(b),
+    )) {
+      equity += pnl;
+      if (equity > peak) peak = equity;
+      const drawdownPct =
+        peak > 0 ? ((equity - peak) / peak) * 100 : 0;
+      out.push({
+        date,
+        equity: Math.round(equity * 100) / 100,
+        drawdownPct: Math.round(drawdownPct * 100) / 100,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/** Recent `market_pulse` rows; ascending by time for chart display. */
+export async function fetchBtcPriceChart(limit: number = 300): Promise<BtcPricePoint[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("market_pulse")
+      .select("timestamp, price, realized_vol_10s")
+      .order("timestamp", { ascending: false })
+      .limit(limit);
+
+    const rows = (data ?? []) as {
+      timestamp: string;
+      price: number;
+      realized_vol_10s: number | null;
+    }[];
+    if (rows.length === 0) return [];
+
+    return rows
+      .slice()
+      .reverse()
+      .map((r) => ({
+        t: r.timestamp,
+        price: r.price,
+        realized_vol_10s: r.realized_vol_10s,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Parse `kronos_bot_status.circuit_breakers` jsonb (already an object).
+ * Empty object when no row exists yet.
+ */
+export async function fetchCircuitBreakers(): Promise<Record<string, CircuitBreakerState>> {
+  if (!supabaseConfigured) return {};
+  try {
+    const { data } = await supabase
+      .from("kronos_bot_status")
+      .select("circuit_breakers")
+      .eq("id", 1)
+      .maybeSingle();
+
+    if (!data) return {};
+    const raw = (data as { circuit_breakers: unknown }).circuit_breakers;
+    if (!raw || typeof raw !== "object") return {};
+
+    const out: Record<string, CircuitBreakerState> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (v && typeof v === "object") {
+        const rec = v as Record<string, unknown>;
+        out[k] = {
+          state: typeof rec.state === "string" ? rec.state : "unknown",
+          failure_count:
+            typeof rec.failure_count === "number" ? rec.failure_count : 0,
+        };
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Aggregated trade metrics for the /trading "key metrics" row. Computed
+ * client-side from recent closed trades. Slippage + fees aren't tracked
+ * yet — returned as 0 with honest empty UI.
+ */
+export async function fetchTradeMetrics(): Promise<TradeMetrics> {
+  const empty: TradeMetrics = {
+    profitFactor: 0,
+    expectancy: 0,
+    payoffRatio: 0,
+    avgWin: 0,
+    avgLoss: 0,
+    largestWin: 0,
+    largestLoss: 0,
+    avgSlippage: 0,
+    totalFees: 0,
+    netAfterFees: 0,
+    totalTrades: 0,
+  };
+  if (!supabaseConfigured) return empty;
+
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_trades")
+      .select("profit_bps, profit_usd")
+      .not("exit_time", "is", null)
+      .limit(5000);
+
+    const rows = (data ?? []) as {
+      profit_bps: number | null;
+      profit_usd: number | null;
+    }[];
+    if (rows.length === 0) return empty;
+
+    const winners = rows.filter((r) => (r.profit_usd ?? 0) > 0);
+    const losers = rows.filter((r) => (r.profit_usd ?? 0) < 0);
+
+    const grossProfitUsd = winners.reduce((s, r) => s + (r.profit_usd ?? 0), 0);
+    const grossLossUsd = Math.abs(losers.reduce((s, r) => s + (r.profit_usd ?? 0), 0));
+    const profitFactor = grossLossUsd > 0 ? grossProfitUsd / grossLossUsd : 0;
+
+    const expectancy =
+      rows.reduce((s, r) => s + (r.profit_bps ?? 0), 0) / rows.length;
+
+    const avgWin = winners.length
+      ? winners.reduce((s, r) => s + (r.profit_bps ?? 0), 0) / winners.length
+      : 0;
+    const avgLoss = losers.length
+      ? losers.reduce((s, r) => s + (r.profit_bps ?? 0), 0) / losers.length
+      : 0;
+    const payoffRatio = Math.abs(avgLoss) > 0 ? avgWin / Math.abs(avgLoss) : 0;
+
+    const largestWin = winners.length
+      ? Math.max(...winners.map((r) => r.profit_bps ?? 0))
+      : 0;
+    const largestLoss = losers.length
+      ? Math.min(...losers.map((r) => r.profit_bps ?? 0))
+      : 0;
+
+    const netAfterFees = rows.reduce((s, r) => s + (r.profit_usd ?? 0), 0);
+
+    return {
+      profitFactor: Math.round(profitFactor * 100) / 100,
+      expectancy: Math.round(expectancy * 10) / 10,
+      payoffRatio: Math.round(payoffRatio * 100) / 100,
+      avgWin: Math.round(avgWin * 10) / 10,
+      avgLoss: Math.round(avgLoss * 10) / 10,
+      largestWin: Math.round(largestWin * 10) / 10,
+      largestLoss: Math.round(largestLoss * 10) / 10,
+      avgSlippage: 0,
+      totalFees: 0,
+      netAfterFees: Math.round(netAfterFees * 100) / 100,
+      totalTrades: rows.length,
+    };
+  } catch {
+    return empty;
+  }
+}
+
 export async function fetchDataFreshness(): Promise<DataFreshness[]> {
   if (!supabaseConfigured) return [];
 
