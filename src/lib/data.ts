@@ -134,6 +134,45 @@ export interface ModelVotes {
     adx: number;
     bb_pct_b: number;
   }>;
+  // Full 37-indicator TA snapshot for downstream retraining. The dashboard
+  // doesn't render every key — the five-key `ta` above is what the UI
+  // consumes. This column exists so a future meta-learner retrain has
+  // the complete feature vector on every prediction row.
+  ta_full: Record<string, number>;
+  // Advanced math features (hurst, shannon entropy, realized vol,
+  // predictability). Computed from the candle series at write time —
+  // see trading/live_monitor.py::_math_features_from_candles.
+  math: {
+    hurst: number;
+    shannon_entropy: number;
+    realized_vol: number;
+    predictability: number;
+  };
+  // Calendar / time-of-day features with sin/cos encoding. Matches the
+  // training-data vocabulary so a retrained meta-learner can consume
+  // them directly.
+  time: {
+    hour_utc: number;
+    hour_sin: number;
+    hour_cos: number;
+    weekday: number;
+    dow_sin: number;
+    dow_cos: number;
+    is_weekend: boolean;
+    month: number;
+  };
+  // Chronos-range transformations (pred_change_pct, pred_abs_move_bps,
+  // pred_upside_pct, pred_downside_pct, pred_risk_reward, pred_direction).
+  // These exist as a separate top-level because XGBoost tree-splits on
+  // them independently from the raw predicted_high/low fields.
+  pred_derived: {
+    pred_change_pct: number;
+    pred_abs_move_bps: number;
+    pred_upside_pct: number;
+    pred_downside_pct: number;
+    pred_risk_reward: number;
+    pred_direction: number; // -1 | 0 | 1
+  };
   funding: {
     signal: "long" | "short" | "hold";
     rate_bps: number;
