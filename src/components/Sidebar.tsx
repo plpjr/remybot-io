@@ -155,7 +155,7 @@ export default function Sidebar() {
             </span>
           </button>
           <p className="text-[10px] text-[var(--text-muted)] text-center opacity-60">
-            Range prediction · Entry timing · Meta-learner
+            Range prediction · Entry timing · Signal fusion
           </p>
         </div>
       </aside>

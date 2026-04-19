@@ -44,7 +44,7 @@ function EmptyState({
 }
 
 const EMPTY_MSG =
-  "No paper trades yet — meta-learner has been holding. Charts fill in once the bot executes trades.";
+  "No paper trades yet — the bot has been holding. Charts fill in once the bot executes trades.";
 
 export default function TradingPage() {
   const { data } = useKronosData();

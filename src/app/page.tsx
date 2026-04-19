@@ -226,7 +226,7 @@ export default function OverviewPage() {
       {/* Footer */}
       <footer className="text-center py-8 border-t border-[var(--border)]">
         <p className="text-sm text-[var(--text-muted)]">
-          Kronos Trading Bot · Range prediction + entry timing + meta-learner filter
+          Kronos Trading Bot · Range prediction + entry timing + signal fusion
         </p>
         <p className="text-xs text-[var(--text-muted)] opacity-50 mt-1">
           Performance shown is from backtesting / paper trading. Past performance does not guarantee future results.

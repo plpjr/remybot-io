@@ -136,8 +136,8 @@ export interface ModelVotes {
   }>;
   // Full 37-indicator TA snapshot for downstream retraining. The dashboard
   // doesn't render every key — the five-key `ta` above is what the UI
-  // consumes. This column exists so a future meta-learner retrain has
-  // the complete feature vector on every prediction row.
+  // consumes. This column exists so downstream model retrains have the
+  // complete feature vector on every prediction row.
   ta_full: Record<string, number>;
   // Advanced math features (hurst, shannon entropy, realized vol,
   // predictability). Computed from the candle series at write time —
@@ -149,7 +149,7 @@ export interface ModelVotes {
     predictability: number;
   };
   // Calendar / time-of-day features with sin/cos encoding. Matches the
-  // training-data vocabulary so a retrained meta-learner can consume
+  // training-data vocabulary so downstream retrained models can consume
   // them directly.
   time: {
     hour_utc: number;
@@ -180,11 +180,6 @@ export interface ModelVotes {
   } | null;
   regime: { name: string; adx?: number; bb_width?: number } | null;
   liquidation: { signal: string; intensity: number } | null;
-  meta_learner: {
-    probability: number;
-    accepted: boolean;
-    threshold: number;
-  } | null;
   adaptive_weights: Record<string, number>;
   final: { action: string; reason: string; confidence: number };
 }

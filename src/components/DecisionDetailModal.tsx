@@ -321,40 +321,6 @@ export default function DecisionDetailModal({
               </div>
             </section>
 
-            {/* Meta-learner */}
-            <section>
-              <h3 className="text-sm font-semibold text-[var(--text)] mb-2">
-                Meta-Learner
-              </h3>
-              {votes.meta_learner ? (
-                <div
-                  className={`rounded-lg border px-4 py-3 ${
-                    votes.meta_learner.accepted
-                      ? "border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800"
-                      : "border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800"
-                  }`}
-                >
-                  <p className="text-sm font-semibold text-[var(--text)]">
-                    P = {fmtConf(votes.meta_learner.probability)} ·
-                    threshold {fmtConf(votes.meta_learner.threshold)} →{" "}
-                    <span
-                      className={
-                        votes.meta_learner.accepted
-                          ? "text-emerald-700 dark:text-emerald-400"
-                          : "text-red-700 dark:text-red-400"
-                      }
-                    >
-                      {votes.meta_learner.accepted ? "accepted" : "rejected"}
-                    </span>
-                  </p>
-                </div>
-              ) : (
-                <p className="text-xs text-[var(--text-muted)] italic">
-                  Meta-learner not available this cycle.
-                </p>
-              )}
-            </section>
-
             {/* Adaptive weights */}
             <section>
               <h3 className="text-sm font-semibold text-[var(--text)] mb-2">

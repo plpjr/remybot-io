@@ -33,12 +33,12 @@ function ChorusRow({
   name: string;
   vote: string;
   detail?: string;
-  accent?: "long" | "short" | "hold" | "accepted" | "rejected" | "neutral";
+  accent?: "long" | "short" | "hold" | "neutral";
 }) {
   const accentCls =
-    accent === "long" || accent === "accepted"
+    accent === "long"
       ? "text-emerald-600 dark:text-emerald-400"
-      : accent === "short" || accent === "rejected"
+      : accent === "short"
         ? "text-red-600 dark:text-red-400"
         : accent === "hold"
           ? "text-amber-600 dark:text-amber-400"
@@ -169,7 +169,7 @@ export default function ModelChorusCard({ latest }: ModelChorusCardProps) {
     : "no data";
 
   const regime = votes.regime;
-  const ml = votes.meta_learner;
+  const liquidation = votes.liquidation;
 
   const finalAccent: "long" | "short" | "hold" | "neutral" =
     votes.final.action === "long"
@@ -253,18 +253,20 @@ export default function ModelChorusCard({ latest }: ModelChorusCardProps) {
           }
           accent="neutral"
         />
-        <ChorusRow
-          name="Meta-Learner"
-          vote={
-            ml
-              ? `${fmtConf(ml.probability)} → ${ml.accepted ? "accepted" : "rejected"}`
-              : "not available"
-          }
-          detail={ml ? `threshold ${fmtConf(ml.threshold)}` : undefined}
-          accent={
-            ml ? (ml.accepted ? "accepted" : "rejected") : "neutral"
-          }
-        />
+        {liquidation && liquidation.signal && liquidation.signal !== "none" ? (
+          <ChorusRow
+            name="Liquidation"
+            vote={liquidation.signal}
+            detail={`intensity ${fmtNum(liquidation.intensity, 2)}`}
+            accent={
+              liquidation.signal === "long"
+                ? "long"
+                : liquidation.signal === "short"
+                  ? "short"
+                  : "neutral"
+            }
+          />
+        ) : null}
       </div>
 
       {/* Final decision — emphasized */}
