@@ -127,6 +127,22 @@ export interface ModelVotes {
     direction: "up" | "down" | "flat" | null;
     strength: number;
   } | null;
+  // Shadow predictors (TimesFM 2.0 + Moirai-MoE base) added 2026-04-19.
+  // Logged for accuracy measurement against realized outcomes — they do
+  // NOT currently vote on the trading decision. Rendering is a follow-up
+  // task; this interface just reserves the typed shape so
+  // test_data_contract_drift.py stays green when the bot ships the two
+  // new top-level keys.
+  timesfm: {
+    direction: "up" | "down" | "flat" | null;
+    predicted_change_pct: number;
+    confidence: number;
+  } | null;
+  moirai_moe: {
+    direction: "up" | "down" | "flat" | null;
+    predicted_change_pct: number;
+    confidence: number;
+  } | null;
   ta: Partial<{
     rsi: number;
     macd_hist: number;
