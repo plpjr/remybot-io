@@ -92,6 +92,64 @@ export interface ChangelogEntry {
   tags: string[];
 }
 
+/* ─── Per-cycle model votes (populated by bot after Track B deploys) ─── */
+
+/**
+ * Per-timeframe Kronos vote. Written by the bot's `_build_model_votes`
+ * helper (see freqtrade-bot plan Track B); shape mirrored here for type
+ * safety on the dashboard side. The `tests/test_data_contract_drift.py`
+ * on the bot side cross-checks these keys.
+ */
+export interface KronosTimingVote {
+  pattern: "dip_then_rise" | "rise_then_dip" | "flat" | string;
+  entry_side: "long" | "short" | "none" | string;
+  confidence: number;
+}
+
+/**
+ * Full per-cycle model votes jsonb column, landing on
+ * `kronos_predictions.model_votes`. All sub-objects are nullable (partial
+ * failures are normal — e.g. Kronos 1h model not loaded on VPS).
+ */
+export interface ModelVotes {
+  chronos: {
+    predicted_high: number;
+    predicted_low: number;
+    predicted_close: number;
+    range_bps: number;
+    confidence: number;
+    direction_bias: "up" | "down" | null;
+  } | null;
+  kronos_5m: KronosTimingVote | null;
+  kronos_1h: KronosTimingVote | null;
+  kronos_1m: KronosTimingVote | null;
+  kronos_consensus: {
+    direction: "up" | "down" | "flat" | null;
+    strength: number;
+  } | null;
+  ta: Partial<{
+    rsi: number;
+    macd_hist: number;
+    atr_pct: number;
+    adx: number;
+    bb_pct_b: number;
+  }>;
+  funding: {
+    signal: "long" | "short" | "hold";
+    rate_bps: number;
+    zscore: number;
+  } | null;
+  regime: { name: string; adx?: number; bb_width?: number } | null;
+  liquidation: { signal: string; intensity: number } | null;
+  meta_learner: {
+    probability: number;
+    accepted: boolean;
+    threshold: number;
+  } | null;
+  adaptive_weights: Record<string, number>;
+  final: { action: string; reason: string; confidence: number };
+}
+
 /** Current bot-schema row shapes (see freqtrade-bot/trading/trade_logger.py). */
 interface BotStatusRow {
   status: string;
@@ -1319,6 +1377,751 @@ export async function fetchTradeMetrics(): Promise<TradeMetrics> {
       totalFees: 0,
       netAfterFees: Math.round(netAfterFees * 100) / 100,
       totalTrades: rows.length,
+    };
+  } catch {
+    return empty;
+  }
+}
+
+/* ─── Tier-2 fetchers + ModelVotes + resolution helper ─── */
+
+/**
+ * Resolution shifting a la TradingView: ≤24h queries the raw paper
+ * prediction view; 24h–7d queries the hourly rollup; >7d queries the
+ * daily rollup. Returns the table name + the column where the bucket
+ * timestamp lives (base table uses `timestamp`, rollups use `bucket_ts`).
+ * Rollups are maintained by pg_cron (see migration 20260419010000).
+ */
+export type Resolution =
+  | { table: "kronos_paper_predictions"; bucketField: "timestamp" }
+  | { table: "kronos_paper_predictions_hourly"; bucketField: "bucket_ts" }
+  | { table: "kronos_paper_predictions_daily"; bucketField: "bucket_ts" };
+
+export function selectResolution(lookbackHours: number): Resolution {
+  if (lookbackHours <= 24) {
+    return { table: "kronos_paper_predictions", bucketField: "timestamp" };
+  }
+  if (lookbackHours <= 7 * 24) {
+    return {
+      table: "kronos_paper_predictions_hourly",
+      bucketField: "bucket_ts",
+    };
+  }
+  return {
+    table: "kronos_paper_predictions_daily",
+    bucketField: "bucket_ts",
+  };
+}
+
+/* ── Types for the new card fetchers. ── */
+
+export interface HoldReasonCount {
+  reason: string;
+  count: number;
+}
+
+export interface RangeWidthBucket {
+  bucket: string;
+  count: number;
+}
+
+export interface DirectionBiasCount {
+  bias: string;
+  count: number;
+}
+
+export interface HeatmapCell {
+  session?: string;
+  regime?: string;
+  action: string;
+  count: number;
+}
+
+export interface SessionDecisionCell {
+  session: string;
+  action: string;
+  count: number;
+}
+
+export interface RegimeDecisionCell {
+  regime: string;
+  action: string;
+  count: number;
+}
+
+export interface PredictedVsActualPoint {
+  t: string;
+  predicted_high: number;
+  predicted_low: number;
+  current_price: number;
+  observed_high: number | null;
+  observed_low: number | null;
+}
+
+export interface ConfidencePoint {
+  t: string;
+  avg_confidence: number;
+}
+
+export interface AccuracyScatterPoint {
+  confidence: number;
+  range_error_bps: number;
+  high_hit: boolean | null;
+}
+
+export interface AccuracyByRegime {
+  regime: string;
+  avg_range_error: number;
+  hit_rate: number;
+  sample_count: number;
+}
+
+export interface HighLowHitPoint {
+  t: string;
+  high_hit: boolean | null;
+  low_hit: boolean | null;
+}
+
+export interface VolatilityPoint {
+  t: string;
+  vol_10s: number;
+  vol_60s: number;
+}
+
+export interface SpreadEvent {
+  t: string;
+  spread_bps: number;
+  price: number;
+}
+
+export interface ExitReasonBucket {
+  reason: string;
+  count: number;
+  total_pnl_usd: number;
+}
+
+export interface SignalOutcomeRow {
+  trade_id: string;
+  signal_time: string;
+  signal_confidence: number;
+  exit_reason: string | null;
+  profit_usd: number | null;
+  profit_bps: number | null;
+}
+
+export interface LatestModelVotes {
+  timestamp: string;
+  model_votes: ModelVotes | null;
+  decision_action: string;
+  decision_reason: string;
+}
+
+/** 1. Hold-reason donut: top reasons the bot stayed in hold. */
+export async function fetchHoldReasonBreakdown(): Promise<HoldReasonCount[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_predictions")
+      .select("decision_reason, decision_action")
+      .eq("decision_action", "hold")
+      .order("timestamp", { ascending: false })
+      .limit(1000);
+
+    const rows = (data ?? []) as {
+      decision_reason: string | null;
+      decision_action: string | null;
+    }[];
+    if (rows.length === 0) return [];
+
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      const reason = r.decision_reason ?? "unknown";
+      counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 2. Range-width histogram: bucket `predicted_range_bps` into 5 bands.
+ * The bands are calibrated to typical BTC 5-min ranges (tight <20bps,
+ * very wide >200bps).
+ */
+export async function fetchRangeWidthHistogram(): Promise<RangeWidthBucket[]> {
+  const buckets: RangeWidthBucket[] = [
+    { bucket: "<20", count: 0 },
+    { bucket: "20-50", count: 0 },
+    { bucket: "50-100", count: 0 },
+    { bucket: "100-200", count: 0 },
+    { bucket: ">200", count: 0 },
+  ];
+  if (!supabaseConfigured) return buckets;
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_predictions")
+      .select("predicted_range_bps")
+      .not("predicted_range_bps", "is", null)
+      .order("timestamp", { ascending: false })
+      .limit(1000);
+
+    const rows = (data ?? []) as { predicted_range_bps: number | null }[];
+    if (rows.length === 0) return buckets;
+
+    for (const r of rows) {
+      const v = r.predicted_range_bps ?? 0;
+      if (v < 20) buckets[0].count += 1;
+      else if (v < 50) buckets[1].count += 1;
+      else if (v < 100) buckets[2].count += 1;
+      else if (v < 200) buckets[3].count += 1;
+      else buckets[4].count += 1;
+    }
+    return buckets;
+  } catch {
+    return buckets;
+  }
+}
+
+/** 3. Direction-bias counts: how often Chronos predicts up/down/null. */
+export async function fetchDirectionBiasCounts(): Promise<DirectionBiasCount[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_predictions")
+      .select("direction_bias")
+      .order("timestamp", { ascending: false })
+      .limit(1000);
+
+    const rows = (data ?? []) as { direction_bias: string | null }[];
+    if (rows.length === 0) return [];
+
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      const bias = r.direction_bias ?? "null";
+      counts.set(bias, (counts.get(bias) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([bias, count]) => ({ bias, count }))
+      .sort((a, b) => b.count - a.count);
+  } catch {
+    return [];
+  }
+}
+
+/** 4. Session × decision cross-tab — which sessions the bot acts in. */
+export async function fetchSessionDecisionHeatmap(): Promise<
+  SessionDecisionCell[]
+> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_predictions")
+      .select("session, decision_action")
+      .order("timestamp", { ascending: false })
+      .limit(2000);
+
+    const rows = (data ?? []) as {
+      session: string | null;
+      decision_action: string | null;
+    }[];
+    if (rows.length === 0) return [];
+
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      const key = `${r.session ?? "unknown"}||${r.decision_action ?? "unknown"}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).map(([key, count]) => {
+      const [session, action] = key.split("||");
+      return { session, action, count };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** 5. Regime × decision cross-tab — which regimes the bot trades in. */
+export async function fetchRegimeDecisionHeatmap(): Promise<
+  RegimeDecisionCell[]
+> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_predictions")
+      .select("regime, decision_action")
+      .order("timestamp", { ascending: false })
+      .limit(2000);
+
+    const rows = (data ?? []) as {
+      regime: string | null;
+      decision_action: string | null;
+    }[];
+    if (rows.length === 0) return [];
+
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      const key = `${r.regime ?? "unknown"}||${r.decision_action ?? "unknown"}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).map(([key, count]) => {
+      const [regime, action] = key.split("||");
+      return { regime, action, count };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 6. Predicted-vs-actual bands — pair each prediction with the observed
+ * high/low so the chart can draw the predicted ribbon and the actual
+ * extremes as overlay lines. Uses the accuracy view which already joins
+ * observed data from market_pulse.
+ */
+export async function fetchPredictedVsActualBands(
+  limit: number = 100,
+): Promise<PredictedVsActualPoint[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_prediction_accuracy")
+      .select(
+        "timestamp, predicted_high, predicted_low, current_price, observed_high, observed_low",
+      )
+      .order("timestamp", { ascending: false })
+      .limit(limit);
+
+    const rows = (data ?? []) as {
+      timestamp: string;
+      predicted_high: number | null;
+      predicted_low: number | null;
+      current_price: number | null;
+      observed_high: number | null;
+      observed_low: number | null;
+    }[];
+    if (rows.length === 0) return [];
+
+    return rows
+      .slice()
+      .reverse()
+      .map((r) => ({
+        t: r.timestamp,
+        predicted_high: r.predicted_high ?? 0,
+        predicted_low: r.predicted_low ?? 0,
+        current_price: r.current_price ?? 0,
+        observed_high: r.observed_high,
+        observed_low: r.observed_low,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 7. Confidence over time. Uses `selectResolution` — raw table for ≤24h,
+ * hourly rollup for ≤7d, daily rollup thereafter. The rollup tables
+ * already hold an avg_confidence column (see pg_cron migration). The
+ * raw table falls back to client-side hourly bucketing.
+ */
+export async function fetchConfidenceOverTime(
+  lookbackHours: number = 168,
+): Promise<ConfidencePoint[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const res = selectResolution(lookbackHours);
+    const since = new Date(Date.now() - lookbackHours * 3600 * 1000).toISOString();
+
+    if (res.table === "kronos_paper_predictions") {
+      const { data } = await supabase
+        .from(res.table)
+        .select("timestamp, confidence")
+        .not("confidence", "is", null)
+        .gte("timestamp", since)
+        .order("timestamp", { ascending: true })
+        .limit(5000);
+
+      const rows = (data ?? []) as {
+        timestamp: string;
+        confidence: number | null;
+      }[];
+      if (rows.length === 0) return [];
+
+      // Bucket into hours client-side.
+      const byHour = new Map<string, { sum: number; count: number }>();
+      for (const r of rows) {
+        const hourKey = r.timestamp.slice(0, 13); // YYYY-MM-DDTHH
+        const entry = byHour.get(hourKey) ?? { sum: 0, count: 0 };
+        entry.sum += r.confidence ?? 0;
+        entry.count += 1;
+        byHour.set(hourKey, entry);
+      }
+      return Array.from(byHour.entries()).map(([hourKey, v]) => ({
+        t: `${hourKey}:00:00Z`,
+        avg_confidence: v.count > 0 ? v.sum / v.count : 0,
+      }));
+    }
+
+    // Rollup tables — already pre-aggregated.
+    const { data } = await supabase
+      .from(res.table)
+      .select(`${res.bucketField}, avg_confidence`)
+      .gte(res.bucketField, since)
+      .order(res.bucketField, { ascending: true })
+      .limit(5000);
+
+    const rows = (data ?? []) as Record<string, unknown>[];
+    if (rows.length === 0) return [];
+
+    return rows.map((r) => ({
+      t: String(r[res.bucketField] ?? ""),
+      avg_confidence:
+        typeof r.avg_confidence === "number" ? r.avg_confidence : 0,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** 8. Accuracy scatter — confidence vs range_error_bps, colored by high_hit. */
+export async function fetchAccuracyScatter(): Promise<AccuracyScatterPoint[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_prediction_accuracy")
+      .select("confidence, range_error_bps, high_hit")
+      .not("range_error_bps", "is", null)
+      .not("confidence", "is", null)
+      .order("timestamp", { ascending: false })
+      .limit(1000);
+
+    const rows = (data ?? []) as {
+      confidence: number | null;
+      range_error_bps: number | null;
+      high_hit: boolean | null;
+    }[];
+    if (rows.length === 0) return [];
+
+    return rows.map((r) => ({
+      confidence: r.confidence ?? 0,
+      range_error_bps: r.range_error_bps ?? 0,
+      high_hit: r.high_hit,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** 9. Accuracy aggregated by regime — "how does Chronos do per regime". */
+export async function fetchAccuracyByRegime(): Promise<AccuracyByRegime[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_prediction_accuracy")
+      .select("regime, range_error_bps, high_hit, low_hit")
+      .not("range_error_bps", "is", null)
+      .order("timestamp", { ascending: false })
+      .limit(2000);
+
+    const rows = (data ?? []) as {
+      regime: string | null;
+      range_error_bps: number | null;
+      high_hit: boolean | null;
+      low_hit: boolean | null;
+    }[];
+    if (rows.length === 0) return [];
+
+    const agg = new Map<
+      string,
+      { errSum: number; hits: number; evaluable: number; n: number }
+    >();
+    for (const r of rows) {
+      const key = r.regime ?? "unknown";
+      const entry = agg.get(key) ?? {
+        errSum: 0,
+        hits: 0,
+        evaluable: 0,
+        n: 0,
+      };
+      entry.errSum += r.range_error_bps ?? 0;
+      entry.n += 1;
+      // A "hit" = either high_hit OR low_hit was true. Evaluable = either
+      // was not null.
+      if (r.high_hit !== null || r.low_hit !== null) {
+        entry.evaluable += 1;
+        if (r.high_hit === true || r.low_hit === true) entry.hits += 1;
+      }
+      agg.set(key, entry);
+    }
+
+    return Array.from(agg.entries())
+      .map(([regime, v]) => ({
+        regime,
+        avg_range_error:
+          v.n > 0 ? Math.round((v.errSum / v.n) * 10) / 10 : 0,
+        hit_rate:
+          v.evaluable > 0
+            ? Math.round((v.hits / v.evaluable) * 1000) / 10
+            : 0,
+        sample_count: v.n,
+      }))
+      .sort((a, b) => b.sample_count - a.sample_count);
+  } catch {
+    return [];
+  }
+}
+
+/** 10. High/low hit timeline — recent cycles' hit/miss status per side. */
+export async function fetchHighLowHitTimeline(
+  limit: number = 100,
+): Promise<HighLowHitPoint[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_prediction_accuracy")
+      .select("timestamp, high_hit, low_hit")
+      .order("timestamp", { ascending: false })
+      .limit(limit);
+
+    const rows = (data ?? []) as {
+      timestamp: string;
+      high_hit: boolean | null;
+      low_hit: boolean | null;
+    }[];
+    if (rows.length === 0) return [];
+
+    return rows
+      .slice()
+      .reverse()
+      .map((r) => ({
+        t: r.timestamp,
+        high_hit: r.high_hit,
+        low_hit: r.low_hit,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 11. Volatility timeline — realized_vol_10s + realized_vol_60s from
+ * market_pulse, ascending for chart display.
+ */
+export async function fetchVolatilityTimeline(
+  limit: number = 300,
+): Promise<VolatilityPoint[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("market_pulse")
+      .select("timestamp, realized_vol_10s, realized_vol_60s")
+      .order("timestamp", { ascending: false })
+      .limit(limit);
+
+    const rows = (data ?? []) as {
+      timestamp: string;
+      realized_vol_10s: number | null;
+      realized_vol_60s: number | null;
+    }[];
+    if (rows.length === 0) return [];
+
+    return rows
+      .slice()
+      .reverse()
+      .map((r) => ({
+        t: r.timestamp,
+        vol_10s: r.realized_vol_10s ?? 0,
+        vol_60s: r.realized_vol_60s ?? 0,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 12. Spread-widening events — rows from market_pulse where the
+ * bid/ask spread (bps) exceeded a configurable threshold. Useful for
+ * flagging liquidity gaps that may have invalidated entry decisions.
+ */
+export async function fetchSpreadEvents(
+  thresholdBps: number = 5,
+): Promise<SpreadEvent[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("market_pulse")
+      .select("timestamp, spread_bps, price")
+      .not("spread_bps", "is", null)
+      .gte("spread_bps", thresholdBps)
+      .order("timestamp", { ascending: false })
+      .limit(200);
+
+    const rows = (data ?? []) as {
+      timestamp: string;
+      spread_bps: number | null;
+      price: number | null;
+    }[];
+    if (rows.length === 0) return [];
+
+    return rows.map((r) => ({
+      t: r.timestamp,
+      spread_bps: r.spread_bps ?? 0,
+      price: r.price ?? 0,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** 13. Exit-reason breakdown — count + summed PnL per exit reason. */
+export async function fetchExitReasonBreakdown(): Promise<ExitReasonBucket[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_trades")
+      .select("exit_reason, profit_usd")
+      .not("exit_time", "is", null)
+      .limit(5000);
+
+    const rows = (data ?? []) as {
+      exit_reason: string | null;
+      profit_usd: number | null;
+    }[];
+    if (rows.length === 0) return [];
+
+    const agg = new Map<string, { count: number; pnl: number }>();
+    for (const r of rows) {
+      const key = r.exit_reason ?? "unknown";
+      const entry = agg.get(key) ?? { count: 0, pnl: 0 };
+      entry.count += 1;
+      entry.pnl += r.profit_usd ?? 0;
+      agg.set(key, entry);
+    }
+    return Array.from(agg.entries())
+      .map(([reason, v]) => ({
+        reason,
+        count: v.count,
+        total_pnl_usd: Math.round(v.pnl * 100) / 100,
+      }))
+      .sort((a, b) => b.count - a.count);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 14. Signal-outcome audit — joins kronos_paper_signals → kronos_paper_trades
+ * by trade_id. For each recent signal, show the eventual outcome.
+ * Supabase doesn't support server-side joins across base tables via the
+ * JS client without an RPC or view, so we do it client-side by pulling
+ * signals and their matching trades in two queries.
+ */
+export async function fetchSignalOutcomeAudit(
+  limit: number = 50,
+): Promise<SignalOutcomeRow[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const { data: sigData } = await supabase
+      .from("kronos_paper_signals")
+      .select("trade_id, timestamp, confidence")
+      .order("timestamp", { ascending: false })
+      .limit(limit);
+
+    const signals = (sigData ?? []) as {
+      trade_id: string | null;
+      timestamp: string;
+      confidence: number | null;
+    }[];
+    if (signals.length === 0) return [];
+
+    const tradeIds = signals
+      .map((s) => s.trade_id)
+      .filter((id): id is string => id !== null && id !== undefined);
+
+    let trades: {
+      id: string;
+      exit_reason: string | null;
+      profit_usd: number | null;
+      profit_bps: number | null;
+    }[] = [];
+
+    if (tradeIds.length > 0) {
+      const { data: tradeData } = await supabase
+        .from("kronos_paper_trades")
+        .select("id, exit_reason, profit_usd, profit_bps")
+        .in("id", tradeIds);
+      trades = (tradeData ?? []) as typeof trades;
+    }
+
+    const byId = new Map<
+      string,
+      {
+        exit_reason: string | null;
+        profit_usd: number | null;
+        profit_bps: number | null;
+      }
+    >();
+    for (const t of trades) {
+      byId.set(t.id, {
+        exit_reason: t.exit_reason,
+        profit_usd: t.profit_usd,
+        profit_bps: t.profit_bps,
+      });
+    }
+
+    return signals.map((s) => {
+      const match = s.trade_id ? byId.get(s.trade_id) : undefined;
+      return {
+        trade_id: s.trade_id ?? "",
+        signal_time: s.timestamp,
+        signal_confidence: s.confidence ?? 0,
+        exit_reason: match?.exit_reason ?? null,
+        profit_usd: match?.profit_usd ?? null,
+        profit_bps: match?.profit_bps ?? null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Most-recent cycle with full model_votes jsonb + decision trace —
+ * feeds the Model Chorus card on /. Null-safe: if the row's
+ * model_votes is null (pre-Track B backfill rows), the card renders
+ * a "waiting for next cycle" empty state.
+ */
+export async function fetchLatestModelVotes(): Promise<LatestModelVotes> {
+  const empty: LatestModelVotes = {
+    timestamp: "",
+    model_votes: null,
+    decision_action: "",
+    decision_reason: "",
+  };
+  if (!supabaseConfigured) return empty;
+
+  try {
+    const { data } = await supabase
+      .from("kronos_paper_predictions")
+      .select("timestamp, model_votes, decision_action, decision_reason")
+      .order("timestamp", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!data) return empty;
+    const row = data as {
+      timestamp: string;
+      model_votes: ModelVotes | null;
+      decision_action: string | null;
+      decision_reason: string | null;
+    };
+    return {
+      timestamp: row.timestamp,
+      model_votes: row.model_votes ?? null,
+      decision_action: row.decision_action ?? "",
+      decision_reason: row.decision_reason ?? "",
     };
   } catch {
     return empty;

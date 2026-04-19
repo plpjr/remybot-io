@@ -80,6 +80,219 @@ export default function AnalysisPage() {
   const predAcc = kronosData.predictionAccuracy;
   const hasPredAcc = predAcc.rows.length > 0;
 
+  const bands = kronosData.predictedVsActualBands;
+  const scatter = kronosData.accuracyScatter;
+  const volTimeline = kronosData.volatilityTimeline;
+  const btcPrice = kronosData.btcPriceChart;
+  const hasBands = bands.length > 0;
+  const hasScatter = scatter.length > 0;
+  const hasVolTimeline = volTimeline.length > 0;
+  const hasBtcPrice = btcPrice.length > 0;
+
+  // Predicted vs actual bands: plot predicted_high/low as a shaded band
+  // (via two lines with stacked area), plus current_price + observed
+  // extremes as separate lines.
+  const bandsOption: EChartsOption = hasBands
+    ? {
+        tooltip: {
+          trigger: "axis",
+          axisPointer: { type: "cross" },
+        },
+        legend: {
+          data: [
+            "Predicted Low",
+            "Predicted High",
+            "Current Price",
+            "Observed High",
+            "Observed Low",
+          ],
+          bottom: 0,
+          textStyle: { fontSize: 10 },
+        },
+        grid: { bottom: 40, top: 12 },
+        xAxis: {
+          type: "category",
+          data: bands.map((b) => b.t.slice(5, 16)),
+          boundaryGap: false,
+          axisLabel: {
+            fontSize: 10,
+            interval: Math.max(0, Math.floor(bands.length / 10) - 1),
+          },
+        },
+        yAxis: {
+          type: "value",
+          scale: true,
+          axisLabel: { formatter: (v: number) => `$${(v / 1000).toFixed(1)}k` },
+        },
+        series: [
+          {
+            name: "Predicted Low",
+            type: "line",
+            data: bands.map((b) => b.predicted_low),
+            showSymbol: false,
+            lineStyle: { width: 0 },
+            stack: "predicted-band",
+            areaStyle: { color: "transparent" },
+          },
+          {
+            name: "Predicted High",
+            type: "line",
+            data: bands.map((b) =>
+              Math.max(0, b.predicted_high - b.predicted_low),
+            ),
+            showSymbol: false,
+            stack: "predicted-band",
+            lineStyle: { width: 0 },
+            areaStyle: { color: "rgba(59, 130, 246, 0.18)" },
+          },
+          {
+            name: "Current Price",
+            type: "line",
+            data: bands.map((b) => b.current_price),
+            showSymbol: false,
+            lineStyle: { width: 2, color: "#0ea5e9" },
+          },
+          {
+            name: "Observed High",
+            type: "line",
+            data: bands.map((b) => b.observed_high),
+            showSymbol: false,
+            lineStyle: { width: 1.5, color: "#10b981", type: "dashed" },
+            connectNulls: false,
+          },
+          {
+            name: "Observed Low",
+            type: "line",
+            data: bands.map((b) => b.observed_low),
+            showSymbol: false,
+            lineStyle: { width: 1.5, color: "#ef4444", type: "dashed" },
+            connectNulls: false,
+          },
+        ],
+      }
+    : {};
+
+  // Accuracy scatter: x = confidence, y = range_error_bps; colour = hit/miss.
+  const scatterHits = scatter.filter((s) => s.high_hit === true);
+  const scatterMisses = scatter.filter((s) => s.high_hit !== true);
+  const accuracyScatterOption: EChartsOption = hasScatter
+    ? {
+        tooltip: {
+          trigger: "item",
+          formatter: (params: unknown) => {
+            const p = params as { data: number[] };
+            return `Conf: ${(p.data[0] * 100).toFixed(1)}%<br/>Err: ${p.data[1].toFixed(1)} bps`;
+          },
+        },
+        legend: { data: ["High hit", "High miss"], bottom: 0, textStyle: { fontSize: 10 } },
+        grid: { bottom: 44, top: 12 },
+        xAxis: {
+          type: "value",
+          name: "Confidence",
+          nameLocation: "middle",
+          nameGap: 24,
+          min: 0,
+          max: 1,
+          axisLabel: {
+            formatter: (v: number) => `${(v * 100).toFixed(0)}%`,
+            fontSize: 10,
+          },
+        },
+        yAxis: {
+          type: "value",
+          name: "Range error (bps)",
+          nameLocation: "middle",
+          nameGap: 38,
+          nameTextStyle: { fontSize: 10 },
+          axisLabel: { fontSize: 10 },
+        },
+        series: [
+          {
+            name: "High hit",
+            type: "scatter",
+            data: scatterHits.map((s) => [s.confidence, s.range_error_bps]),
+            itemStyle: { color: "#10b981", opacity: 0.65 },
+            symbolSize: 7,
+          },
+          {
+            name: "High miss",
+            type: "scatter",
+            data: scatterMisses.map((s) => [s.confidence, s.range_error_bps]),
+            itemStyle: { color: "#94a3b8", opacity: 0.45 },
+            symbolSize: 6,
+          },
+        ],
+      }
+    : {};
+
+  const volTimelineOption: EChartsOption = hasVolTimeline
+    ? {
+        tooltip: { trigger: "axis" },
+        legend: {
+          data: ["10s vol", "60s vol"],
+          bottom: 0,
+          textStyle: { fontSize: 10 },
+        },
+        grid: { bottom: 36, top: 12 },
+        xAxis: {
+          type: "category",
+          data: volTimeline.map((v) => v.t.slice(11, 19)),
+          boundaryGap: false,
+          axisLabel: {
+            fontSize: 10,
+            interval: Math.max(0, Math.floor(volTimeline.length / 8) - 1),
+          },
+        },
+        yAxis: { type: "value", scale: true },
+        series: [
+          {
+            name: "10s vol",
+            type: "line",
+            data: volTimeline.map((v) => v.vol_10s),
+            showSymbol: false,
+            lineStyle: { width: 1, color: "#94a3b8" },
+          },
+          {
+            name: "60s vol",
+            type: "line",
+            data: volTimeline.map((v) => v.vol_60s),
+            showSymbol: false,
+            lineStyle: { width: 2, color: "#3b82f6" },
+          },
+        ],
+      }
+    : {};
+
+  const btcPriceOption: EChartsOption = hasBtcPrice
+    ? {
+        tooltip: { trigger: "axis" },
+        grid: { top: 12, bottom: 24 },
+        xAxis: {
+          type: "category",
+          data: btcPrice.map((p) => p.t.slice(11, 19)),
+          boundaryGap: false,
+          axisLabel: {
+            fontSize: 10,
+            interval: Math.max(0, Math.floor(btcPrice.length / 8) - 1),
+          },
+        },
+        yAxis: {
+          type: "value",
+          scale: true,
+          axisLabel: { formatter: (v: number) => `$${(v / 1000).toFixed(1)}k` },
+        },
+        series: [
+          {
+            type: "line",
+            data: btcPrice.map((p) => p.price),
+            showSymbol: false,
+            lineStyle: { width: 2, color: "#3b82f6" },
+            areaStyle: { opacity: 0.08 },
+          },
+        ],
+      }
+    : {};
+
   const rangeErrorOption: EChartsOption = hasPredAcc ? {
     tooltip: {
       trigger: "axis",
@@ -270,6 +483,96 @@ export default function AnalysisPage() {
             <p className="text-sm font-medium text-[var(--text)]">No observed ranges yet</p>
             <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm">
               Waiting for the first batch of predictions to age into the 5-minute observation window.
+            </p>
+          </div>
+        )}
+      </section>
+
+      {/* Predicted vs Actual Bands */}
+      <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+        <div className="flex items-center gap-2 mb-1">
+          <Target className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          <h3 className="text-lg font-semibold text-[var(--text)]">Predicted vs Actual Bands</h3>
+        </div>
+        <p className="text-sm text-[var(--text-muted)] mb-6">
+          Chronos predicted range (blue ribbon), current price (solid), and observed extremes (dashed)
+        </p>
+        {hasBands ? (
+          <Chart option={bandsOption} height={320} />
+        ) : (
+          <div
+            className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg)] text-center px-4"
+            style={{ height: 280 }}
+          >
+            <p className="text-sm font-medium text-[var(--text)]">Waiting for observed data</p>
+            <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm">
+              Ribbon fills in once predictions age into the 5-minute
+              observation window.
+            </p>
+          </div>
+        )}
+      </section>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* Accuracy Scatter */}
+        <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+          <h3 className="text-lg font-semibold text-[var(--text)] mb-1">Accuracy Scatter</h3>
+          <p className="text-sm text-[var(--text-muted)] mb-4">
+            Confidence vs range error — green dots are predictions where the high was hit
+          </p>
+          {hasScatter ? (
+            <Chart option={accuracyScatterOption} height={280} />
+          ) : (
+            <div
+              className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg)] text-center px-4"
+              style={{ height: 280 }}
+            >
+              <p className="text-sm font-medium text-[var(--text)]">No scored predictions yet</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm">
+                Scatter fills in once the accuracy view backfills (5 min+ cadence).
+              </p>
+            </div>
+          )}
+        </section>
+
+        {/* Live BTC Price */}
+        <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+          <h3 className="text-lg font-semibold text-[var(--text)] mb-1">Live BTC Price</h3>
+          <p className="text-sm text-[var(--text-muted)] mb-4">
+            Most recent ticks from <code>market_pulse</code>
+          </p>
+          {hasBtcPrice ? (
+            <Chart option={btcPriceOption} height={280} />
+          ) : (
+            <div
+              className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg)] text-center px-4"
+              style={{ height: 280 }}
+            >
+              <p className="text-sm font-medium text-[var(--text)]">No ticks landed yet</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm">
+                Chart fills in once the ticker service is streaming market_pulse.
+              </p>
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* Volatility Timeline */}
+      <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+        <h3 className="text-lg font-semibold text-[var(--text)] mb-1">Volatility Timeline</h3>
+        <p className="text-sm text-[var(--text-muted)] mb-4">
+          Realized volatility over the last ~300 ticks — thin line is 10s, thick line is 60s
+        </p>
+        {hasVolTimeline ? (
+          <Chart option={volTimelineOption} height={260} />
+        ) : (
+          <div
+            className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg)] text-center px-4"
+            style={{ height: 260 }}
+          >
+            <p className="text-sm font-medium text-[var(--text)]">No volatility data yet</p>
+            <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm">
+              Timeline fills in once the ticker service writes realized_vol fields.
             </p>
           </div>
         )}

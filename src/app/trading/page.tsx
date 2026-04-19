@@ -1,12 +1,15 @@
 "use client";
 
-import { TrendingUp, DollarSign, Timer, Flame, BarChart3, Grid3X3, Activity } from "lucide-react";
+import { useState } from "react";
+import { TrendingUp, DollarSign, Timer, Flame, BarChart3, Grid3X3, Activity, LogOut, FileSearch } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { HealthCard } from "@/components/HealthIndicator";
 import { useKronosData } from "@/lib/use-data";
 import Chart from "@/components/Chart";
 import type { EChartsOption } from "@/components/Chart";
+import DecisionDetailModal from "@/components/DecisionDetailModal";
 import { getHealthStatus } from "@/lib/health-status";
+import type { LatestModelVotes, ModelVotes } from "@/lib/data";
 
 function MetricRow({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -52,12 +55,86 @@ export default function TradingPage() {
   const streaks = data.streaks;
   const hourlyPerformance = data.hourlyPerformance;
   const micro = data.microstructureHourly;
+  const exitReasons = data.exitReasonBreakdown;
+  const signalAudit = data.signalOutcomeAudit;
+  const latestVotes = data.latestModelVotes;
   const hasMicro = micro.length > 0;
   const hasDailyPnl = dailyPnl.length > 0;
   const hasWeeklyPnl = weeklyPnl.length > 0;
   const hasDurations = tradeDurations.some((b) => b.count > 0);
   const hasHourly = hourlyPerformance.some((h) => h.trades > 0);
   const hasStreaks = streaks.streakHistory.length > 0;
+  const hasExits = exitReasons.length > 0;
+  const hasSignalAudit = signalAudit.length > 0;
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalRow, setModalRow] = useState<LatestModelVotes | null>(null);
+
+  const openModalForSignal = (signalIdx: number) => {
+    const row = signalAudit[signalIdx];
+    if (!row) return;
+    // Only the row whose signal_time matches latestVotes.timestamp can
+    // carry a populated votes jsonb; everything else falls through to
+    // the "pre-Track B" message inside the modal.
+    const isLatest =
+      latestVotes.timestamp && latestVotes.timestamp === row.signal_time;
+    const votes: ModelVotes | null = isLatest ? latestVotes.model_votes : null;
+    setModalRow({
+      timestamp: row.signal_time,
+      model_votes: votes,
+      decision_action: "signal",
+      decision_reason: `Signal → trade ${row.trade_id}, exit ${row.exit_reason ?? "pending"}`,
+    });
+    setModalOpen(true);
+  };
+
+  const exitReasonOption: EChartsOption = hasExits
+    ? {
+        tooltip: {
+          trigger: "axis",
+          formatter: (params: unknown) => {
+            const arr = params as { name: string; value: number; seriesName: string }[];
+            return arr
+              .map((p) => `${p.seriesName}: ${p.value}`)
+              .join("<br/>");
+          },
+        },
+        legend: {
+          data: ["Count", "Total PnL ($)"],
+          bottom: 0,
+          textStyle: { fontSize: 10 },
+        },
+        grid: { bottom: 40, left: 110 },
+        xAxis: { type: "value" },
+        yAxis: {
+          type: "category",
+          data: exitReasons.map((r) => r.reason),
+          inverse: true,
+          axisLabel: { fontSize: 10 },
+        },
+        series: [
+          {
+            name: "Count",
+            type: "bar",
+            data: exitReasons.map((r) => r.count),
+            itemStyle: { color: "#3b82f6", borderRadius: [0, 4, 4, 0] },
+            barMaxWidth: 16,
+          },
+          {
+            name: "Total PnL ($)",
+            type: "bar",
+            data: exitReasons.map((r) => ({
+              value: r.total_pnl_usd,
+              itemStyle: {
+                color: r.total_pnl_usd >= 0 ? "#10b981" : "#ef4444",
+                borderRadius: [0, 4, 4, 0],
+              },
+            })),
+            barMaxWidth: 16,
+          },
+        ],
+      }
+    : {};
 
   const microPriceOption: EChartsOption = hasMicro ? {
     tooltip: { trigger: "axis" },
@@ -306,6 +383,108 @@ export default function TradingPage() {
           <EmptyState title="No hourly breakdown yet" message={EMPTY_MSG} height={160} />
         )}
       </section>
+
+      {/* Exit Reason Breakdown */}
+      <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+        <div className="flex items-center gap-2 mb-1">
+          <LogOut className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          <h3 className="text-lg font-semibold text-[var(--text)]">Exit Reason Breakdown</h3>
+        </div>
+        <p className="text-sm text-[var(--text-muted)] mb-4">
+          How trades are closing — stop_loss / take_profit / signal_exit / tick_feed_crash / manual
+        </p>
+        {hasExits ? (
+          <Chart option={exitReasonOption} height={260} />
+        ) : (
+          <EmptyState
+            title="No trades closed yet"
+            message="Bar chart fills in once the executor records its first closed trade."
+            height={200}
+          />
+        )}
+      </section>
+
+      {/* Signal Outcome Audit */}
+      <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+        <div className="flex items-center gap-2 mb-1">
+          <FileSearch className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          <h3 className="text-lg font-semibold text-[var(--text)]">Signal Outcome Audit</h3>
+        </div>
+        <p className="text-sm text-[var(--text-muted)] mb-4">
+          Each recent signal and what happened to the trade it opened — click for per-model breakdown
+        </p>
+        {hasSignalAudit ? (
+          <div className="overflow-x-auto max-h-[420px]">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-[var(--card)]">
+                <tr className="border-b border-[var(--border)]">
+                  <th className="text-left py-2 text-[var(--text-muted)] font-medium">Signal Time</th>
+                  <th className="text-right py-2 text-[var(--text-muted)] font-medium">Conf.</th>
+                  <th className="text-left py-2 text-[var(--text-muted)] font-medium">Exit Reason</th>
+                  <th className="text-right py-2 text-[var(--text-muted)] font-medium">PnL (USD)</th>
+                  <th className="text-right py-2 text-[var(--text-muted)] font-medium">PnL (bps)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {signalAudit.map((r, i) => (
+                  <tr
+                    key={`${r.signal_time}-${i}`}
+                    className="border-b border-[var(--border)] hover:bg-[var(--bg)] cursor-pointer transition-colors"
+                    onClick={() => openModalForSignal(i)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openModalForSignal(i);
+                      }
+                    }}
+                  >
+                    <td className="py-2 font-mono text-[var(--text-muted)] text-xs">{r.signal_time.slice(5, 16)}</td>
+                    <td className="py-2 text-right text-[var(--text-muted)] font-mono">
+                      {(r.signal_confidence > 1
+                        ? r.signal_confidence
+                        : r.signal_confidence * 100
+                      ).toFixed(1)}%
+                    </td>
+                    <td className="py-2 text-[var(--text-muted)] text-xs">
+                      {r.exit_reason ?? (
+                        <span className="italic opacity-70">open</span>
+                      )}
+                    </td>
+                    <td className={`py-2 text-right font-mono ${r.profit_usd === null ? "text-[var(--text-muted)]" : r.profit_usd >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                      {r.profit_usd === null
+                        ? "—"
+                        : `${r.profit_usd >= 0 ? "+" : ""}$${r.profit_usd.toFixed(2)}`}
+                    </td>
+                    <td className={`py-2 text-right font-mono ${r.profit_bps === null ? "text-[var(--text-muted)]" : r.profit_bps >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                      {r.profit_bps === null
+                        ? "—"
+                        : `${r.profit_bps >= 0 ? "+" : ""}${r.profit_bps.toFixed(1)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState
+            title="No signals yet"
+            message="Audit table fills in once the bot records its first signal (entry)."
+            height={200}
+          />
+        )}
+      </section>
+
+      {/* Decision Detail Modal (shared with /model) */}
+      <DecisionDetailModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        timestamp={modalRow?.timestamp ?? null}
+        votes={modalRow?.model_votes ?? null}
+        decisionAction={modalRow?.decision_action}
+        decisionReason={modalRow?.decision_reason}
+      />
 
       {/* Trade Metrics Table */}
       <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">

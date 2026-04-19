@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheck, Zap } from "lucide-react";
+import { ShieldCheck, Zap, AlertTriangle, TrendingUp } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { HealthCard } from "@/components/HealthIndicator";
 import Chart from "@/components/Chart";
@@ -54,7 +54,29 @@ export default function RiskPage() {
   const overview = data.overview;
   const streaks = data.streaks;
   const breakers = data.circuitBreakers;
+  const spreadEvents = data.spreadEvents;
+  const volTimeline = data.volatilityTimeline;
   const hasDrawdown = drawdownCurve.length > 0;
+  const hasSpreadEvents = spreadEvents.length > 0;
+
+  // Volatility spike detection — compare each vol_60s reading against the
+  // median of the fetched window. Anything >=2x the median is a spike.
+  // Using the in-window median as a rough "7-day" proxy since the
+  // fetcher returns the last ~300 ticks (spanning several hours to days
+  // depending on cadence); good enough as a "this tick is unusually
+  // volatile" heuristic without additional infra.
+  const sortedVol60 = [...volTimeline]
+    .map((v) => v.vol_60s)
+    .filter((v) => v > 0)
+    .sort((a, b) => a - b);
+  const volMedian = sortedVol60.length
+    ? sortedVol60[Math.floor(sortedVol60.length / 2)]
+    : 0;
+  const volSpikes =
+    volMedian > 0
+      ? volTimeline.filter((v) => v.vol_60s >= 2 * volMedian).slice(-30)
+      : [];
+  const hasVolSpikes = volSpikes.length > 0;
 
   const maxDD = overview.maxDrawdown; // %
   const currentDD = drawdownCurve.length
@@ -253,6 +275,104 @@ export default function RiskPage() {
           />
         )}
       </section>
+
+      {/* Spread Widening Events + Volatility Spike Markers */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+          <div className="flex items-center gap-2 mb-1">
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            <h3 className="text-lg font-semibold text-[var(--text)]">Spread Widening Events</h3>
+          </div>
+          <p className="text-sm text-[var(--text-muted)] mb-4">
+            Ticks where <code>spread_bps &gt; 5</code> — signals a liquidity gap that may have invalidated entries
+          </p>
+          {hasSpreadEvents ? (
+            <div className="overflow-x-auto max-h-[360px]">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-[var(--card)]">
+                  <tr className="border-b border-[var(--border)]">
+                    <th className="text-left py-2 text-[var(--text-muted)] font-medium">Time (UTC)</th>
+                    <th className="text-right py-2 text-[var(--text-muted)] font-medium">Spread (bps)</th>
+                    <th className="text-right py-2 text-[var(--text-muted)] font-medium">Price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {spreadEvents.slice(0, 50).map((e, i) => (
+                    <tr key={`${e.t}-${i}`} className="border-b border-[var(--border)]">
+                      <td className="py-2 font-mono text-[var(--text-muted)] text-xs">
+                        {e.t.slice(5, 19).replace("T", " ")}
+                      </td>
+                      <td className={`py-2 text-right font-mono ${e.spread_bps > 15 ? "text-red-600 dark:text-red-400 font-semibold" : "text-amber-600 dark:text-amber-400"}`}>
+                        {e.spread_bps.toFixed(2)}
+                      </td>
+                      <td className="py-2 text-right text-[var(--text-muted)] font-mono">
+                        ${e.price.toFixed(0)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState
+              title="No spread widening events"
+              message="Good news — bid/ask stayed tight through the observed window. Card fills in if a liquidity gap hits."
+              height={180}
+            />
+          )}
+        </section>
+
+        <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
+          <div className="flex items-center gap-2 mb-1">
+            <TrendingUp className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <h3 className="text-lg font-semibold text-[var(--text)]">Volatility Spike Markers</h3>
+          </div>
+          <p className="text-sm text-[var(--text-muted)] mb-4">
+            Ticks where realized_vol_60s exceeded 2× the window median
+            {volMedian > 0 ? ` (median ${volMedian.toFixed(4)})` : ""}
+          </p>
+          {hasVolSpikes ? (
+            <div className="overflow-x-auto max-h-[360px]">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-[var(--card)]">
+                  <tr className="border-b border-[var(--border)]">
+                    <th className="text-left py-2 text-[var(--text-muted)] font-medium">Time (UTC)</th>
+                    <th className="text-right py-2 text-[var(--text-muted)] font-medium">vol_60s</th>
+                    <th className="text-right py-2 text-[var(--text-muted)] font-medium">× median</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {volSpikes.map((v, i) => (
+                    <tr key={`${v.t}-${i}`} className="border-b border-[var(--border)]">
+                      <td className="py-2 font-mono text-[var(--text-muted)] text-xs">
+                        {v.t.slice(5, 19).replace("T", " ")}
+                      </td>
+                      <td className="py-2 text-right font-mono text-amber-600 dark:text-amber-400">
+                        {v.vol_60s.toFixed(4)}
+                      </td>
+                      <td className="py-2 text-right font-mono text-[var(--text-muted)]">
+                        {volMedian > 0
+                          ? `${(v.vol_60s / volMedian).toFixed(1)}x`
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState
+              title="No volatility spikes"
+              message={
+                volTimeline.length === 0
+                  ? "Timeline is empty — waiting for ticker service to stream realized_vol readings."
+                  : "All readings stayed under the 2× median threshold in the observed window."
+              }
+              height={180}
+            />
+          )}
+        </section>
+      </div>
     </div>
   );
 }

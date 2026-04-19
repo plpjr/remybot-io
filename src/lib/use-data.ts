@@ -28,6 +28,21 @@ import {
   fetchBtcPriceChart,
   fetchCircuitBreakers,
   fetchTradeMetrics,
+  fetchHoldReasonBreakdown,
+  fetchRangeWidthHistogram,
+  fetchDirectionBiasCounts,
+  fetchSessionDecisionHeatmap,
+  fetchRegimeDecisionHeatmap,
+  fetchPredictedVsActualBands,
+  fetchConfidenceOverTime,
+  fetchAccuracyScatter,
+  fetchAccuracyByRegime,
+  fetchHighLowHitTimeline,
+  fetchVolatilityTimeline,
+  fetchSpreadEvents,
+  fetchExitReasonBreakdown,
+  fetchSignalOutcomeAudit,
+  fetchLatestModelVotes,
   getSkillRadar,
   getWeeklyImprovements,
   type OverviewStats,
@@ -52,6 +67,21 @@ import {
   type BtcPricePoint,
   type CircuitBreakerState,
   type TradeMetrics,
+  type HoldReasonCount,
+  type RangeWidthBucket,
+  type DirectionBiasCount,
+  type SessionDecisionCell,
+  type RegimeDecisionCell,
+  type PredictedVsActualPoint,
+  type ConfidencePoint,
+  type AccuracyScatterPoint,
+  type AccuracyByRegime,
+  type HighLowHitPoint,
+  type VolatilityPoint,
+  type SpreadEvent,
+  type ExitReasonBucket,
+  type SignalOutcomeRow,
+  type LatestModelVotes,
 } from "./data";
 import {
   overviewStats as mockOverview,
@@ -107,6 +137,23 @@ export interface KronosData {
   btcPriceChart: BtcPricePoint[];
   circuitBreakers: Record<string, CircuitBreakerState>;
   tradeMetrics: TradeMetrics;
+
+  // Tier-2 per-cycle telemetry, feeds /model /analysis /trading /risk cards.
+  holdReasonBreakdown: HoldReasonCount[];
+  rangeWidthHistogram: RangeWidthBucket[];
+  directionBiasCounts: DirectionBiasCount[];
+  sessionDecisionHeatmap: SessionDecisionCell[];
+  regimeDecisionHeatmap: RegimeDecisionCell[];
+  predictedVsActualBands: PredictedVsActualPoint[];
+  confidenceOverTime: ConfidencePoint[];
+  accuracyScatter: AccuracyScatterPoint[];
+  accuracyByRegime: AccuracyByRegime[];
+  highLowHitTimeline: HighLowHitPoint[];
+  volatilityTimeline: VolatilityPoint[];
+  spreadEvents: SpreadEvent[];
+  exitReasonBreakdown: ExitReasonBucket[];
+  signalOutcomeAudit: SignalOutcomeRow[];
+  latestModelVotes: LatestModelVotes;
 }
 
 const emptyStreaks: StreakSummary = {
@@ -143,6 +190,21 @@ const emptyDurations: TradeDurationBucket[] = [
   { range: "30-60m", count: 0, avgPnlBps: 0 },
   { range: "1-4h", count: 0, avgPnlBps: 0 },
   { range: ">4h", count: 0, avgPnlBps: 0 },
+];
+
+const emptyLatestVotes: LatestModelVotes = {
+  timestamp: "",
+  model_votes: null,
+  decision_action: "",
+  decision_reason: "",
+};
+
+const emptyRangeWidth: RangeWidthBucket[] = [
+  { bucket: "<20", count: 0 },
+  { bucket: "20-50", count: 0 },
+  { bucket: "50-100", count: 0 },
+  { bucket: "100-200", count: 0 },
+  { bucket: ">200", count: 0 },
 ];
 
 export function useKronosData() {
@@ -183,6 +245,21 @@ export function useKronosData() {
     btcPriceChart: [],
     circuitBreakers: {},
     tradeMetrics: emptyTradeMetrics,
+    holdReasonBreakdown: [],
+    rangeWidthHistogram: emptyRangeWidth,
+    directionBiasCounts: [],
+    sessionDecisionHeatmap: [],
+    regimeDecisionHeatmap: [],
+    predictedVsActualBands: [],
+    confidenceOverTime: [],
+    accuracyScatter: [],
+    accuracyByRegime: [],
+    highLowHitTimeline: [],
+    volatilityTimeline: [],
+    spreadEvents: [],
+    exitReasonBreakdown: [],
+    signalOutcomeAudit: [],
+    latestModelVotes: emptyLatestVotes,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -216,6 +293,21 @@ export function useKronosData() {
         btcPriceChart,
         circuitBreakers,
         tradeMetrics,
+        holdReasonBreakdown,
+        rangeWidthHistogram,
+        directionBiasCounts,
+        sessionDecisionHeatmap,
+        regimeDecisionHeatmap,
+        predictedVsActualBands,
+        confidenceOverTime,
+        accuracyScatter,
+        accuracyByRegime,
+        highLowHitTimeline,
+        volatilityTimeline,
+        spreadEvents,
+        exitReasonBreakdown,
+        signalOutcomeAudit,
+        latestModelVotes,
       ] = await Promise.all([
         fetchOverviewStats(),
         fetchEquityCurve(),
@@ -242,6 +334,21 @@ export function useKronosData() {
         fetchBtcPriceChart(),
         fetchCircuitBreakers(),
         fetchTradeMetrics(),
+        fetchHoldReasonBreakdown(),
+        fetchRangeWidthHistogram(),
+        fetchDirectionBiasCounts(),
+        fetchSessionDecisionHeatmap(),
+        fetchRegimeDecisionHeatmap(),
+        fetchPredictedVsActualBands(),
+        fetchConfidenceOverTime(),
+        fetchAccuracyScatter(),
+        fetchAccuracyByRegime(),
+        fetchHighLowHitTimeline(),
+        fetchVolatilityTimeline(),
+        fetchSpreadEvents(),
+        fetchExitReasonBreakdown(),
+        fetchSignalOutcomeAudit(),
+        fetchLatestModelVotes(),
       ]);
 
       setData({
@@ -272,6 +379,21 @@ export function useKronosData() {
         btcPriceChart,
         circuitBreakers,
         tradeMetrics,
+        holdReasonBreakdown,
+        rangeWidthHistogram,
+        directionBiasCounts,
+        sessionDecisionHeatmap,
+        regimeDecisionHeatmap,
+        predictedVsActualBands,
+        confidenceOverTime,
+        accuracyScatter,
+        accuracyByRegime,
+        highLowHitTimeline,
+        volatilityTimeline,
+        spreadEvents,
+        exitReasonBreakdown,
+        signalOutcomeAudit,
+        latestModelVotes,
       });
       setError(null);
     } catch (e) {

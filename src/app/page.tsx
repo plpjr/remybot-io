@@ -8,6 +8,7 @@ import { OverviewSkeleton } from "@/components/Skeleton";
 import Chart from "@/components/Chart";
 import type { EChartsOption } from "@/components/Chart";
 import BotHealthCard from "@/components/BotHealthCard";
+import ModelChorusCard from "@/components/ModelChorusCard";
 import {
   TrendingUp,
   Target,
@@ -142,6 +143,9 @@ export default function OverviewPage() {
           />
         </div>
       </div>
+
+      {/* Model Chorus — per-cycle model votes + final decision */}
+      <ModelChorusCard latest={data.latestModelVotes} />
 
       {/* Equity Curve */}
       <section className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm p-6 animate-in">
